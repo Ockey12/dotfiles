@@ -1,0 +1,3394 @@
+import AsyncAlgorithms
+import CasePaths
+import ComposableArchitecture2RuntimeShims
+import CustomDump
+import DebugSnapshots
+import Dependencies
+import class Foundation.NSLock
+import struct Foundation.UUID
+import IssueReporting
+import Observation
+import SwiftUI
+import os
+
+/// A type-erased feature.
+///
+/// An `AnyFeature` allows changing the type of feature used in a given feature hierarchy. Whenever
+/// the type of feature used with an `AnyFeature` changes, the old hierarchy is destroyed and a new
+/// hierarchy is created for the new type.
+public struct AnyFeature<State, Action> : ComposableArchitecture2.FeatureProtocol {
+
+    /// Create an instance that type-erases `feature`.
+    ///
+    /// - Parameter feature: A feature to type-erase.
+    public init(_ feature: some ComposableArchitecture2.FeatureProtocol<State, Action>)
+
+    public static func _mountFeature(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.AnyFeature<State, Action>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+    public static func _routeAction(action: Action, feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.AnyFeature<State, Action>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+    public func _isIdentical(to other: ComposableArchitecture2.AnyFeature<State, Action>) -> Bool
+}
+
+/// Adds a `DebugSnapshotConvertible` conformance to a feature's state.
+///
+/// This macro is automatically applied by the ``Feature()`` macro to ``FeatureProtocol/State``.
+@attached(memberAttribute) @attached(member, names: named(DebugSnapshot), named(_debugSnapshot)) @attached(extension, conformances: DebugSnapshots.DebugSnapshotConvertible) public macro DebugSnapshotState() = #externalMacro(module: "ComposableArchitecture2Macros", type: "DebugSnapshotStateMacro")
+
+/// A feature that doesn't contain any logic.
+///
+/// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `EmptyView`.
+public struct EmptyFeature<State, Action> : ComposableArchitecture2.FeatureProtocol {
+
+    /// Creates an empty feature.
+    public init()
+
+    public static func _mountFeature(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.EmptyFeature<State, Action>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+    public static func _routeAction(action: Action, feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.EmptyFeature<State, Action>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+    public func _isIdentical(to other: ComposableArchitecture2.EmptyFeature<State, Action>) -> Bool
+}
+
+/// An empty, or identity, modifier.
+///
+/// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `EmptyModifier`.
+public struct EmptyFeatureModifier<State, Action> : ComposableArchitecture2.FeatureModifier {
+
+    /// Creates an empty modifier.
+    public init()
+
+    public static func _mountModifier<F>(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.ModifiedFeature<F, ComposableArchitecture2.EmptyFeatureModifier<State, Action>>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>) where State == F.State, Action == F.Action, F : ComposableArchitecture2.FeatureProtocol
+
+    public func _isIdentical(to other: ComposableArchitecture2.EmptyFeatureModifier<State, Action>) -> Bool
+}
+
+/// Defines and implements conformance of a ComposableArchitecture feature.
+@attached(memberAttribute) @attached(member, names: named(State), named(Action), named(store), named(body), named(StoreActorEnumeration), named(StoreEnumeration), named(`switch(store:)`)) @attached(extension, conformances: ComposableArchitecture2.FeatureProtocol, ComposableArchitecture2.StaticFeature) public macro Feature() = #externalMacro(module: "ComposableArchitecture2Macros", type: "FeatureMacro")
+
+/// A custom parameter attribute that constructs features using a result builder context.
+///
+/// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `ViewBuilder`, except it
+/// > builds and composes your app's business logic, not its UI.
+///
+/// This parameter attribute is implicitly applied to ``FeatureProtocol/body`` and
+/// ``FeatureModifier/body(content:)``, allowing you to build features declaratively using
+/// statements:
+///
+/// ```swift
+/// var body: some Feature {
+///   Scope(\.home, action: \.home) {
+///     Home()
+///   }
+///   Scope(\.settings, action: \.settings) {
+///     Settings()
+///   }
+/// }
+/// ```
+///
+/// You can explicitly apply ``FeatureBuilder`` to introduce a builder context to a helper function.
+@resultBuilder public enum FeatureBuilder<State, Action> {
+
+    /// Builds an empty feature from a block containing no statements.
+    public static func buildBlock() -> ComposableArchitecture2.EmptyFeature<State, Action>
+
+    /// Produces content for a conditional statement in a multi-statement closure when the condition
+    /// is true.
+    public static func buildEither<First, Second>(first component: First) -> ComposableArchitecture2.FeatureBuilder<State, Action>._ConditionalFeature<First, Second> where State == First.State, Action == First.Action, First : ComposableArchitecture2.FeatureProtocol, Second : ComposableArchitecture2.FeatureProtocol, First.Action == Second.Action, First.State == Second.State
+
+    /// Produces content for a conditional statement in a multi-statement closure when the condition
+    /// is false.
+    public static func buildEither<First, Second>(second component: Second) -> ComposableArchitecture2.FeatureBuilder<State, Action>._ConditionalFeature<First, Second> where State == First.State, Action == First.Action, First : ComposableArchitecture2.FeatureProtocol, Second : ComposableArchitecture2.FeatureProtocol, First.Action == Second.Action, First.State == Second.State
+
+    /// Produces an optional feature for conditional statements in multi-statement closures that's
+    /// only visible when the condition evaluates to true.
+    public static func buildOptional<F>(_ component: F?) -> F? where State == F.State, Action == F.Action, F : ComposableArchitecture2.FeatureProtocol
+
+    /// Builds an expression within the builder.
+    public static func buildExpression<F>(_ expression: F) -> F where State == F.State, Action == F.Action, F : ComposableArchitecture2.FeatureProtocol
+
+    /// Processes feature content for a conditional compiler-control statement that performs an
+    /// availability check.
+    public static func buildLimitedAvailability(_ component: some ComposableArchitecture2.FeatureProtocol<State, Action>) -> ComposableArchitecture2.AnyFeature<State, Action>
+
+    /// Passes a single feature written as a child feature through unmodified.
+    public static func buildPartialBlock<F>(first: F) -> F where State == F.State, Action == F.Action, F : ComposableArchitecture2.FeatureProtocol
+
+    /// Accumulates multiple child features into a single feature.
+    public static func buildPartialBlock(accumulated: some ComposableArchitecture2.FeatureProtocol<State, Action>, next: some ComposableArchitecture2.FeatureProtocol<State, Action>) -> some ComposableArchitecture2.FeatureProtocol<State, Action>
+
+
+    public struct _ConditionalFeature<First, Second> : ComposableArchitecture2.FeatureProtocol where State == First.State, Action == First.Action, First : ComposableArchitecture2.FeatureProtocol, Second : ComposableArchitecture2.FeatureProtocol, First.Action == Second.Action, First.State == Second.State {
+
+        public var first: First? { get }
+
+        public var second: Second? { get }
+
+        public static func _mountFeature(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.FeatureBuilder<State, Action>._ConditionalFeature<First, Second>>, inputs: ComposableArchitecture2._FeatureInputs<First.State, First.Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+        public static func _routeAction(action: Action, feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.FeatureBuilder<State, Action>._ConditionalFeature<First, Second>>, inputs: ComposableArchitecture2._FeatureInputs<First.State, First.Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+        public func _isIdentical(to other: ComposableArchitecture2.FeatureBuilder<State, Action>._ConditionalFeature<First, Second>) -> Bool
+    }
+}
+
+/// A named value posted by a feature.
+public protocol FeatureEventKey<Value> {
+
+    /// The type of value produced by this event.
+    associatedtype Value = Self
+}
+
+/// Disables feature tracking for a case.
+///
+/// By default, an enumeration feature will associate a case with a singular value as a feature of
+/// its own. To suppress this, attach the `@FeatureIgnored` macro to the case.
+@attached(peer) public macro FeatureIgnored() = #externalMacro(module: "ComposableArchitecture2Macros", type: "FeatureIgnoredMacro")
+
+/// A property wrapper type that can read and write a value managed by ComposableArchitecture.
+///
+/// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `@State` dynamic property.
+@propertyWrapper public struct FeatureLocal<Value> {
+
+    public var wrappedValue: Value { get nonmutating set }
+
+    public var projectedValue: ComposableArchitecture2.FeatureLocal<Value> { get }
+
+    public init(wrappedValue: Value)
+
+    public init(wrappedValue: Value) where Value : ComposableArchitecture2.ValueObservable
+
+    public init(wrappedValue: Value) where Value : ComposableArchitecture2.ValueObservable, Value : Equatable
+
+    public init(wrappedValue: Value) where Value : AnyObject, Value : ComposableArchitecture2.ValueObservable
+
+    public init(wrappedValue: Value) where Value : AnyObject, Value : ComposableArchitecture2.ValueObservable, Value : Equatable
+
+    public init(wrappedValue: Value) where Value : Equatable
+
+    public init(wrappedValue: Value) where Value : AnyObject
+
+    public init(wrappedValue: Value) where Value : AnyObject, Value : Equatable
+
+    public mutating func _mountProperty<F>(in core: some ComposableArchitecture2._Core, container feature: ComposableArchitecture2._GraphValue<F>, fieldName: String?) where F : ComposableArchitecture2.FeatureProtocol
+}
+
+/// A modifier that you apply to a feature or another feature modifier, producing a different
+/// version of the original value.
+///
+/// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `ViewModifier` protocol.
+public protocol FeatureModifier<State, Action> {
+
+    /// The domain specific state of the feature.
+    associatedtype State = Void where Self.State == Self.Body.State
+
+    /// The domain specific actions of the feature.
+    associatedtype Action = Never where Self.Action == Self.Body.Action
+
+    /// The type of feature representing the body.
+    associatedtype Body : ComposableArchitecture2.FeatureProtocol
+
+    /// The content feature type passed to `body()`.
+    typealias Content = ComposableArchitecture2._FeatureModifier_Content<Self>
+
+    /// Gets the current body of the caller.
+    ///
+    /// `content` is a proxy for the feature that will have the modifier represented by `Self` applied
+    /// to it.
+    @ComposableArchitecture2.FeatureBuilder<Self.State, Self.Action> func body(content: Self.Content) -> Self.Body
+
+    func _isIdentical(to other: Self) -> Bool
+
+    static func _makeInputs<F>(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.ModifiedFeature<F, Self>>, inputs: inout ComposableArchitecture2._FeatureInputs<Self.State, Self.Action>, core: some ComposableArchitecture2._Core<Self.State, Self.Action>) where F : ComposableArchitecture2.FeatureProtocol, Self.Action == F.Action, Self.State == F.State
+
+    static func _mountModifier<F>(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.ModifiedFeature<F, Self>>, inputs: ComposableArchitecture2._FeatureInputs<Self.State, Self.Action>, core: some ComposableArchitecture2._Core<Self.State, Self.Action>) where F : ComposableArchitecture2.FeatureProtocol, Self.Action == F.Action, Self.State == F.State
+}
+
+extension FeatureModifier where Self.Body == ComposableArchitecture2._FeatureModifier_Content<Self> {
+
+    public func body(content: Self.Content) -> Self.Content
+}
+
+extension FeatureModifier {
+
+    public func _isIdentical(to other: Self) -> Bool
+
+    public static func _makeInputs<F>(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.ModifiedFeature<F, Self>>, inputs: inout ComposableArchitecture2._FeatureInputs<Self.State, Self.Action>, core: some ComposableArchitecture2._Core<Self.State, Self.Action>) where F : ComposableArchitecture2.FeatureProtocol, Self.Action == F.Action, Self.State == F.State
+
+    public static func _mountModifier<F>(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.ModifiedFeature<F, Self>>, inputs: ComposableArchitecture2._FeatureInputs<Self.State, Self.Action>, core: some ComposableArchitecture2._Core<Self.State, Self.Action>) where F : ComposableArchitecture2.FeatureProtocol, Self.Action == F.Action, Self.State == F.State
+}
+
+extension FeatureModifier {
+
+    public static func _logChanges()
+}
+
+/// A named value produced by a feature.
+///
+/// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `PreferenceKey` protocol.
+///
+/// A feature with multiple children automatically combines its values for a given preference into a
+/// single value visible to its ancestors.
+public protocol FeaturePreferenceKey<Value> {
+
+    /// The type of value produced by this preference.
+    associatedtype Value : Equatable
+
+    /// The default value of the preference.
+    static var defaultValue: Self.Value { get }
+
+    /// Combines a sequence of values by modifying the previously-accumulated value with the result of
+    /// a closure that provides the next value.
+    ///
+    /// This method receives its values in feature-tree order. Conceptually, this combines the
+    /// preference value from one tree with that of its next sibling.
+    ///
+    /// - Parameters:
+    ///   - value: The value accumulated through previous calls to this method. The implementation
+    ///     should modify this value.
+    ///   - nextValue: A closure that returns the next value in the sequence.
+    static func reduce(value: inout Self.Value, nextValue: () -> Self.Value)
+}
+
+/// A type that represents part of your app's business logic and provides modifiers that you use to
+/// configure features.
+///
+/// Use the ``Feature()`` macro on a structure to synthesize a conformance of this protocol.
+///
+/// > Tip: This is complementary to SwiftUI's `View` protocol: where `View` describes a feature's
+/// > UI, `FeatureProtocol` describes its business logic.
+public protocol FeatureProtocol<State, Action> {
+
+    /// The domain specific state of the feature.
+    associatedtype State = Void
+
+    /// The domain specific actions of the feature.
+    associatedtype Action = Never
+
+    /// The content and behavior of the feature.
+    ///
+    /// This type alias provides sugar over ``FeatureProtocol`` that progressively conceals the
+    /// ``State`` and ``Action`` associated types so that you can define ``body`` in terms of
+    /// `some Feature` instead of `some FeatureProtocol<State, Action>`.
+    typealias Feature = ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+    /// The type of feature representing the body of this feature.
+    associatedtype Body
+
+    /// The content and behavior of the feature.
+    ///
+    /// When you implement a custom feature, you must implement a computed `body` property to provide
+    /// the content for your feature. Return a feature that's composed of built-in features that
+    /// ComposableArchitecture provides, plus other composite features that you've already defined:
+    ///
+    /// ```swift
+    /// @Feature struct MyFeature {
+    ///   struct State {
+    ///     var count = 0
+    ///   }
+    ///   enum Action {
+    ///     case incrementButtonTapped
+    ///   }
+    ///   var body: some Feature {
+    ///     Update { state, action in
+    ///       switch action {
+    ///       case .incrementButtonTapped:
+    ///         state.count += 1
+    ///       }
+    ///     }
+    ///   }
+    /// }
+    /// ```
+    @ComposableArchitecture2.FeatureBuilder<Self.State, Self.Action> var body: Self.Body { get }
+
+    static func _mountFeature(feature: ComposableArchitecture2._GraphValue<Self>, inputs: ComposableArchitecture2._FeatureInputs<Self.State, Self.Action>, core: some ComposableArchitecture2._Core<Self.State, Self.Action>)
+
+    static func _routeAction(action: Self.Action, feature: ComposableArchitecture2._GraphValue<Self>, inputs: ComposableArchitecture2._FeatureInputs<Self.State, Self.Action>, core: some ComposableArchitecture2._Core<Self.State, Self.Action>)
+
+    func _isIdentical(to other: Self) -> Bool
+}
+
+extension FeatureProtocol where Self.Body == Never {
+
+    public var body: Never { get }
+}
+
+extension FeatureProtocol where Self.Action == Self.Body.Action, Self.Body : ComposableArchitecture2.FeatureProtocol, Self.State == Self.Body.State {
+
+    public static func _mountFeature(feature: ComposableArchitecture2._GraphValue<Self>, inputs: ComposableArchitecture2._FeatureInputs<Self.State, Self.Action>, core: some ComposableArchitecture2._Core<Self.State, Self.Action>)
+
+    public static func _routeAction(action: Self.Action, feature: ComposableArchitecture2._GraphValue<Self>, inputs: ComposableArchitecture2._FeatureInputs<Self.State, Self.Action>, core: some ComposableArchitecture2._Core<Self.State, Self.Action>)
+
+    public func _isIdentical(to other: Self) -> Bool
+}
+
+extension FeatureProtocol where Self.Action == Self.Body.Action, Self.Body : ComposableArchitecture2.FeatureProtocol, Self.State == Self.Body.State {
+
+    public static func _logChanges()
+}
+
+extension FeatureProtocol {
+
+    /// Adds an action to perform when the specified trigger fires.
+    ///
+    /// - Parameters:
+    ///   - value: The trigger to observe.
+    ///   - action: The action to perform when the trigger fires. The `action` closure passes the
+    ///     trigger's value as its parameter, along with mutable access to your feature's current
+    ///     state.
+    /// - Returns: A feature that performs `action` when the trigger fires.
+    @warn_unqualified_access
+    public func onTrigger<V>(_ value: ComposableArchitecture2.Trigger<V>, _ action: @escaping (_ triggerValue: V, _ state: inout Self.State) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+
+    /// Adds an action to perform when the specified trigger fires.
+    ///
+    /// - Parameters:
+    ///   - value: The trigger to observe.
+    ///   - action: The action to perform when the trigger fires. The `action` closure provides
+    ///     mutable access to your feature's current state.
+    /// - Returns: A feature that performs `action` when the trigger fires.
+    @warn_unqualified_access
+    public func onTrigger(_ value: ComposableArchitecture2.Trigger<Void>, _ action: @escaping (_ state: inout Self.State) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+}
+
+extension FeatureProtocol {
+
+    /// Applies a modifier to a feature and returns a new feature.
+    ///
+    /// Use this modifier to combine a ``Feature()`` and a ``FeatureModifier``, to create a new
+    /// feature.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `modifier` view modifier.
+    ///
+    /// - Parameter modifier: The modifier to apply to this feature.
+    @warn_unqualified_access
+    public func modifier<M>(_ modifier: M) -> ComposableArchitecture2.ModifiedFeature<Self, M> where M : ComposableArchitecture2.FeatureModifier, Self.Action == M.Action, Self.State == M.State
+}
+
+extension FeatureProtocol {
+
+    /// Sets the dependency value of the specified key path to the given value.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `environment` view modifier,
+    /// > but instead of using the SwiftUI environment, it leverages
+    /// > [Dependencies](https://github.com/pointfreeco/swift-dependencies).
+    ///
+    /// - Parameters:
+    ///   - keyPath: A key path that indicates the property of the `DependencyValues` structure to
+    ///     update.
+    ///   - value: The new value to set for the item specified by `keyPath`.
+    /// - Returns: A feature that has the given value set in its dependencies.
+    @warn_unqualified_access
+    public func dependency<V>(_ keyPath: WritableKeyPath<Dependencies.DependencyValues, V>, _ value: V) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+
+    /// Transforms the dependency value of the specified key path with the given function.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `transformEnvironment` view
+    /// > modifier, but instead of using the SwiftUI environment, it leverages
+    /// > [Dependencies](https://github.com/pointfreeco/swift-dependencies).
+    ///
+    /// - Parameters:
+    ///   - keyPath: A key path that indicates the property of the `DependencyValues` structure to
+    ///     update.
+    ///   - transform: A transform function that can update the dependency value.
+    /// - Returns: A feature that has the given property transformed in its dependencies.
+    @warn_unqualified_access
+    public func transformDependency<V>(_ keyPath: WritableKeyPath<Dependencies.DependencyValues, V>, transform: @escaping (inout V) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+}
+
+extension FeatureProtocol {
+
+    /// Adds a condition that controls whether users can interact with this feature.
+    ///
+    /// > Tip: This feature modifier is similar to SwiftUI's `disabled` view modifier.
+    ///
+    /// - Parameter isDisabled: A Boolean value that determines whether users can interact with this
+    ///   feature.
+    /// - Returns: A feature that controls whether users can interact with this feature.
+    @warn_unqualified_access
+    public func disabled(_ isDisabled: Bool) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+}
+
+extension FeatureProtocol {
+
+    /// Binds a feature's identity to the given value.
+    ///
+    /// When the value specified by the `id` parameter changes, the state and lifecycle of the feature
+    /// resets: dismount and mount events are fired, feature-specific state resets, and tasks
+    /// associated with the feature are cancelled.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `id` view modifier.
+    ///
+    /// - Parameter id: The feature's identity.
+    /// - Returns: A feature with the given identity.
+    @warn_unqualified_access
+    public func id(_ id: some Equatable) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+}
+
+extension FeatureProtocol {
+
+    /// Adds an action to perform when a specified value changes.
+    ///
+    /// > Tip: This feature modifier is similar to SwiftUI's `onChange` view modifier.
+    ///
+    /// - Parameters:
+    ///   - value: The value to observe for changes.
+    ///   - initial: Whether the action should be run when this feature initially mounts.
+    ///   - action: The action to perform when `value` changes. The feature's store automatically
+    ///     cancels and restarts any associated tasks.
+    /// - Returns: A feature that triggers `action` before it mounts or when a value changes.
+    @warn_unqualified_access
+    public func onChange<V>(of value: V, initial: Bool = false, _ action: @escaping (_ oldValue: V, _ newValue: V, _ state: inout Self.State) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where V : Equatable
+
+
+    /// Adds an action to perform when a specified value changes.
+    ///
+    /// > Tip: This feature modifier is similar to SwiftUI's `onChange` view modifier.
+    ///
+    /// - Parameters:
+    ///   - value: The value to observe for changes.
+    ///   - initial: Whether the action should be run when this feature initially mounts.
+    ///   - action: The action to perform when `value` changes. The feature's store automatically
+    ///     cancels and restarts any associated tasks.
+    /// - Returns: A feature that triggers `action` before it mounts or when a value changes.
+    @warn_unqualified_access
+    public func onChange<V>(of value: V, initial: Bool = false, _ action: @escaping (_ state: inout Self.State) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where V : Equatable
+
+}
+
+extension FeatureProtocol {
+
+    /// Adds an action to perform after this feature dismounts.
+    ///
+    /// > Tip: This feature modifier is similar to SwiftUI's `onDisappear` view modifier, with an
+    /// > important difference: `onDisappear` actions are tied to the _visibility_ of a view, and may
+    /// > fire more than once in a view's lifetime (_e.g._, when drilling down into another screen),
+    /// > whereas `onDismount` fires a single time at the end of a feature's lifetime.
+    ///
+    /// - Parameters:
+    ///   - name: Human readable name of the dismount task.
+    ///   - priority: The priority of the dismount task.
+    ///   - action: The action to perform.
+    ///   - fileID: The source `#fileID` associated with the dismount task.
+    ///   - filePath: The source `#filePath` associated with the dismount task.
+    ///   - line: The source `#line` associated with the dismount task.
+    ///   - column: The source `#column` associated with the dismount task.
+    /// - Returns: A feature that triggers `action` after it dismounts.
+    @warn_unqualified_access
+    public func onDismount(name: String? = nil, priority: TaskPriority? = nil, _ action: nonisolated(nonsending) @escaping (_ state: Self.State) async throws -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+}
+
+extension FeatureProtocol {
+
+    /// Adds an action to perform before this feature mounts.
+    ///
+    /// > Tip: This feature modifier is similar to SwiftUI's `onAppear` and `task` view modifiers,
+    /// > with an important difference: `onAppear` and `task` actions are tied to the _visibility_ of
+    /// > a view, and may fire and cancel tasks more than once in a view's lifetime (_e.g._, when
+    /// > drilling down into another screen and back again), whereas `onMount` fires a single time at
+    /// > the start of a feature's lifetime.
+    ///
+    /// The action closure passed to `onMount` is called once for the lifetime of a feature.
+    ///
+    /// - Parameter action: The action to perform.
+    /// - Returns: A feature that triggers `action` before it mounts.
+    @warn_unqualified_access
+    public func onMount(_ action: @escaping (_ state: inout Self.State) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+
+    /// Adds an action to perform before this feature mounts or when a specified value changes.
+    ///
+    /// > Tip: This feature modifier is similar to SwiftUI's `task(id:)` view modifier, with an
+    /// > important difference: `task(id:)` actions are tied to the _visibility_ of a view, and may
+    /// > fire and cancel tasks more often than when `id` changes (_e.g._, when drilling down into
+    /// > another screen and back again).
+    ///
+    /// Applying this modifier to a feature will tie its lifetime to `id`, including mount/dismount
+    /// hooks, as well as any associated tasks created by the feature.
+    ///
+    /// - Parameters:
+    ///   - id: The value to observe for changes.
+    ///   - action: The action to perform. If the `id` changes, the feature's store automatically
+    ///     cancels and restarts any associated tasks.
+    /// - Returns: A feature that triggers `action` before it mounts or when a value changes.
+    @warn_unqualified_access
+    public func onMount<ID>(id: ID, _ action: @escaping (_ state: inout Self.State) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where ID : Equatable
+
+}
+
+extension FeatureProtocol {
+
+    /// Adds an action to perform when the specified event key is posted.
+    ///
+    /// - Parameters:
+    ///   - key: The key to monitor for value postings.
+    ///   - action: The action to perform when the value for `key` posts. The `action` closure passes
+    ///     the value as its parameter, along with mutable access to your feature's current state.
+    /// - Returns: A feature that triggers `action` when the value for `key` posts.
+    @warn_unqualified_access
+    public func onEvent<K>(_ key: K.Type, consume: Bool = true, perform action: @escaping (_ value: K.Value, _ state: inout Self.State) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where K : ComposableArchitecture2.FeatureEventKey
+
+
+    /// Applies a transformation to an event value.
+    ///
+    /// - Parameters:
+    ///   - key: The key of an event to transform.
+    ///   - callback: A transform function that can update the event value.
+    /// - Returns: A feature that transforms `key`'s value.
+    @warn_unqualified_access
+    public func transformEvent<K>(_ key: K.Type, _ transform: @escaping (_ value: inout K.Value) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where K : ComposableArchitecture2.FeatureEventKey
+
+}
+
+extension FeatureProtocol {
+
+    /// Presents a feature per element of the given domain.
+    ///
+    /// > Tip: This is the feature equivalent to SwiftUI's collection-powered `ForEach` and
+    /// > `NavigationStack` views.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A writable key path to the child collection of state.
+    ///   - actionKeyPath: A case key path to the child collection of actions.
+    ///   - idKeyPath: A key path to the provided element's identity.
+    ///   - dismissStyle: The dismiss behavior of a given child.
+    ///   - element: A child feature whose lifecycle is tied to the state of an element in
+    ///     `stateKeyPath`.
+    ///   - fileID: The source `#fileID` associated with the feature.
+    ///   - filePath: The source `#filePath` associated with the feature.
+    ///   - line: The source `#line` associated with the feature.
+    ///   - column: The source `#column` associated with the feature.
+    /// - Returns: A feature that combines the child element feature with the parent feature.
+    @warn_unqualified_access
+    public func forEach<Data, ElementAction, ID>(_ stateKeyPath: WritableKeyPath<Self.State, Data>, action actionKeyPath: CasePaths.CaseKeyPath<Self.Action, (ID, ElementAction)>, id idKeyPath: KeyPath<Data.Element, ID>, dismissStyle: some ComposableArchitecture2.ForEachDismissStyle = .list, @ComposableArchitecture2.FeatureBuilder<Data.Element, ElementAction> _ element: () -> some ComposableArchitecture2.FeatureProtocol, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where Data : MutableCollection, Data : RandomAccessCollection, Data : RangeReplaceableCollection, ID : Hashable
+
+
+    /// Presents a feature per identifiable element of the given domain.
+    ///
+    /// > Tip: This is the feature equivalent to SwiftUI's collection-powered `ForEach` and
+    /// > `NavigationStack` views.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A writable key path to the child collection of state.
+    ///   - actionKeyPath: A case key path to the child collection of actions.
+    ///   - dismissStyle: The dismiss behavior of a given child.
+    ///   - element: A child feature whose lifecycle is tied to the state of an element in
+    ///     `stateKeyPath`.
+    ///   - fileID: The source `#fileID` associated with the feature.
+    ///   - filePath: The source `#filePath` associated with the feature.
+    ///   - line: The source `#line` associated with the feature.
+    ///   - column: The source `#column` associated with the feature.
+    /// - Returns: A feature that combines the child element feature with the parent feature.
+    @warn_unqualified_access
+    public func forEach<Data, ElementAction>(_ stateKeyPath: WritableKeyPath<Self.State, Data>, action actionKeyPath: CasePaths.CaseKeyPath<Self.Action, (Data.Element.ID, ElementAction)>, dismissStyle: some ComposableArchitecture2.ForEachDismissStyle = .list, @ComposableArchitecture2.FeatureBuilder<Data.Element, ElementAction> _ element: () -> some ComposableArchitecture2.FeatureProtocol, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where Data : MutableCollection, Data : RandomAccessCollection, Data : RangeReplaceableCollection, Data.Element : Identifiable
+
+}
+
+extension FeatureProtocol {
+
+    /// Embeds a child feature in a parent domain.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A case key path to the child feature's state.
+    ///   - actionKeyPath: A case key path to the child feature's actions.
+    ///   - wrapped: A child feature whose lifecycle is tied to the state at `stateKeyPath`.
+    ///   - fileID: The source `#fileID` associated with the feature.
+    ///   - filePath: The source `#filePath` associated with the feature.
+    ///   - line: The source `#line` associated with the feature.
+    ///   - column: The source `#column` associated with the feature.
+    /// - Returns: A feature that combines the child feature with the parent feature.
+    @warn_unqualified_access
+    public func ifCaseLet<WrappedState, WrappedAction>(_ stateKeyPath: CasePaths.CaseKeyPath<Self.State, WrappedState>, action actionKeyPath: CasePaths.CaseKeyPath<Self.Action, WrappedAction>, @ComposableArchitecture2.FeatureBuilder<WrappedState, WrappedAction> _ wrapped: () -> some ComposableArchitecture2.FeatureProtocol, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+}
+
+extension FeatureProtocol {
+
+    /// Presents a feature of the given domain.
+    ///
+    /// > Tip: This is the feature equivalent to SwiftUI's presentation tools, like `sheet`.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A writable key path to the child feature's state.
+    ///   - actionKeyPath: A case key path to the child feature's actions.
+    ///   - wrapped: A child feature whose lifecycle is tied to the state at `stateKeyPath`.
+    ///   - fileID: The source `#fileID` associated with the feature.
+    ///   - filePath: The source `#filePath` associated with the feature.
+    ///   - line: The source `#line` associated with the feature.
+    ///   - column: The source `#column` associated with the feature.
+    /// - Returns: A feature that combines the child feature with the parent feature.
+    @warn_unqualified_access
+    public func ifLet<WrappedState, WrappedAction>(_ stateKeyPath: WritableKeyPath<Self.State, WrappedState?>, action actionKeyPath: CasePaths.CaseKeyPath<Self.Action, WrappedAction>, @ComposableArchitecture2.FeatureBuilder<WrappedState, WrappedAction> _ wrapped: () -> some ComposableArchitecture2.FeatureProtocol, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+}
+
+extension FeatureProtocol {
+
+    /// Adds an action to perform when the specified preference key's value changes.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `onPreferenceChange` view
+    /// > modifier.
+    ///
+    /// - Parameters:
+    ///   - key: The key to monitor for value changes.
+    ///   - action: The action to perform when the value for `key` changes. The `action` closure
+    ///     passes the new value as its parameter, along with mutable access to your feature's current
+    ///     state.
+    /// - Returns: A feature that triggers `action` when the value for `key` changes.
+    @warn_unqualified_access
+    public func onPreferenceChange<K>(_ key: K.Type, perform action: @escaping (_ value: K.Value, _ state: inout Self.State) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where K : ComposableArchitecture2.FeaturePreferenceKey
+
+
+    /// Sets a value for the given preference.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `preference` view modifier.
+    ///
+    /// - Parameters:
+    ///   - key: The key of a preference to set.
+    ///   - value: The value.
+    /// - Returns: A feature that sets `key` to `value`.
+    @warn_unqualified_access
+    public func preference<K>(key: K.Type, value: K.Value) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where K : ComposableArchitecture2.FeaturePreferenceKey
+
+
+    /// Applies a transformation to a preference value.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `transformPreference` view
+    /// > modifier.
+    ///
+    /// - Parameters:
+    ///   - key: The key of a preference to transform.
+    ///   - callback: A transform function that can update the preference value.
+    /// - Returns: A feature that transforms `key`'s value.
+    @warn_unqualified_access
+    public func transformPreference<K>(_ key: K.Type, _ callback: @escaping (inout K.Value) -> Void) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where K : ComposableArchitecture2.FeaturePreferenceKey
+
+}
+
+extension FeatureProtocol {
+
+    /// Presents this feature as a prompt.
+    ///
+    /// A "prompt" is a feature that automatically dismisses itself after receiving a user action, for
+    /// example an alert or confirmation dialog, which is dismissed when an action button is tapped.
+    ///
+    /// If you are embedding a feature as a prompt in a feature "destination" enum, conform to the
+    /// ``Prompt`` protocol to automatically add this behavior to an otherwise logicless feature.
+    ///
+    /// - Returns: This feature as a prompt.
+    public func prompt() -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action>
+
+}
+
+extension FeatureProtocol {
+
+    /// Spawns a child feature in a parent domain.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A writable key path to the child feature's state.
+    ///   - child: A child feature that manages the given domain.
+    /// - Returns: A feature that combines the child feature with the parent feature.
+    @warn_unqualified_access
+    public func spawn<Spawned, Child>(_ stateKeyPath: WritableKeyPath<Self.State, ComposableArchitecture2.Spawn<Spawned>>, @ComposableArchitecture2.FeatureBuilder<Spawned.State, Spawned.Action> _ child: () -> Child) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where Spawned : ComposableArchitecture2.FeatureProtocol, Child : ComposableArchitecture2.FeatureProtocol, Spawned.Action == Child.Action, Spawned.State == Child.State
+
+
+    /// Spawns a child feature in a parent domain.
+    ///
+    /// > Tip: This is the feature equivalent to SwiftUI's presentation tools, like `sheet`.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A writable key path to the child feature's state.
+    ///   - child: A child feature that manages the given domain.
+    /// - Returns: A feature that combines the child feature with the parent feature.
+    @warn_unqualified_access
+    public func ifLet<Spawned, Child>(_ stateKeyPath: WritableKeyPath<Self.State, ComposableArchitecture2.Spawn<Spawned>?>, @ComposableArchitecture2.FeatureBuilder<Spawned.State, Spawned.Action> _ child: () -> Child) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where Spawned : ComposableArchitecture2.FeatureProtocol, Child : ComposableArchitecture2.FeatureProtocol, Spawned.Action == Child.Action, Spawned.State == Child.State
+
+
+    /// Spawns a child feature in a parent domain.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A case key path to the child feature's state.
+    ///   - child: A child feature that manages the given domain.
+    /// - Returns: A feature that combines the child feature with the parent feature.
+    @warn_unqualified_access
+    public func ifCaseLet<Spawned, Child>(_ stateKeyPath: CasePaths.CaseKeyPath<Self.State, ComposableArchitecture2.Spawn<Spawned>>, @ComposableArchitecture2.FeatureBuilder<Spawned.State, Spawned.Action> _ child: () -> Child) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where Spawned : ComposableArchitecture2.FeatureProtocol, Child : ComposableArchitecture2.FeatureProtocol, Spawned.Action == Child.Action, Spawned.State == Child.State
+
+
+    /// Spawns a child feature per element of the given domain.
+    ///
+    /// > Tip: This is the feature equivalent to SwiftUI's collection-powered `ForEach` and
+    /// > `NavigationStack` views.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A writable key path to the child collection of state.
+    ///   - child: A child feature whose lifecycle is tied to the state of an element in
+    ///     `stateKeyPath`.
+    /// - Returns: A feature that combines the child element feature with the parent feature.
+    @warn_unqualified_access
+    public func forEach<Data, Spawned, Child>(_ stateKeyPath: WritableKeyPath<Self.State, Data>, dismissStyle: some ComposableArchitecture2.ForEachDismissStyle = .list, @ComposableArchitecture2.FeatureBuilder<Spawned.State, Spawned.Action> _ child: () -> Child) -> some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> where Data : MutableCollection, Data : RandomAccessCollection, Data : RangeReplaceableCollection, Spawned : ComposableArchitecture2.FeatureProtocol, Child : ComposableArchitecture2.FeatureProtocol, Data.Element == ComposableArchitecture2.Spawn<Spawned>, Spawned.Action == Child.Action, Spawned.State == Child.State
+
+}
+
+/// A type that represents the state of a feature.
+///
+/// You do not apply this conformance. ComposableArchitecture applies it for you from the
+/// ``Feature()`` macro.
+public protocol FeatureState<Feature> {
+
+    /// A type representing the feature associated with this state.
+    associatedtype Feature
+}
+
+/// The runtime of a feature.
+@dynamicMemberLookup @propertyWrapper public struct FeatureStore<State, Action> {
+
+    /// Creates a feature store.
+    ///
+    /// While feature stores are automatically created by the ``Feature()`` macro, there are occasions
+    /// in which you may want to manually create one. For example, in a ``FeatureModifier``
+    /// conformance:
+    ///
+    /// ```swift
+    /// struct MyFeatureModifier<State, Action>: FeatureModifier {
+    ///   @FeatureStore<State, Action> var store
+    ///   func body(content: Content) -> some Feature {
+    ///     // ...
+    ///   }
+    /// }
+    /// ```
+    public init()
+
+    public var wrappedValue: ComposableArchitecture2.FeatureStore<State, Action> { get }
+
+    /// The state of this store.
+    public var state: State { get }
+
+    public subscript<Member>(dynamicMember keyPath: KeyPath<State, Member>) -> Member { get }
+
+    /// Runs the given operation asynchronously.
+    ///
+    /// - Parameters:
+    ///   - id: The task's identity. When omitted, a default identity is applied by the synchronous
+    ///     context. See ``StoreTaskID`` for more information.
+    ///   - name: Human readable name of the task.
+    ///   - priority: The priority of the task.
+    ///   - operation: The operation to perform.
+    ///   - fileID: The source `#fileID` associated with the task.
+    ///   - filePath: The source `#filePath` associated with the task.
+    ///   - line: The source `#line` associated with the task.
+    ///   - column: The source `#column` associated with the task.
+    @available(*, noasync)
+    public func addTask(id: ComposableArchitecture2.StoreTaskID? = nil, name: String? = nil, priority: TaskPriority? = nil, operation: nonisolated(nonsending) @escaping () async throws -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column)
+
+    /// Sends an action into the store.
+    ///
+    /// - Parameters:
+    ///   - action: An action.
+    ///   - fileID: The source `#fileID` associated with the action.
+    ///   - filePath: The source `#filePath` associated with the action.
+    ///   - line: The source `#line` associated with the action.
+    ///   - column: The source `#column` associated with the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    public func send(_ action: Action, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(CancellationError) -> Task<Void, Never>?
+
+    /// Modifies a feature's state with exclusive access.
+    ///
+    /// - Parameters:
+    ///   - body: A closure that is given mutable access to the store's state.
+    ///   - fileID: The source `#fileID` associated with the modification.
+    ///   - filePath: The source `#filePath` associated with the modification.
+    ///   - line: The source `#line` associated with the modification.
+    ///   - column: The source `#column` associated with the modification.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of the given
+    ///   modification, _e.g._, work performed in associated
+    ///   [`onChange`](<doc:FeatureProtocol/onChange(of:initial:_:)>) actions.
+    @discardableResult
+    public func modify(_ body: (inout State) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(CancellationError) -> Task<Void, Never>?
+
+    /// Posts an event.
+    ///
+    /// - Parameters:
+    ///   - key: The key of a event to post.
+    ///   - value: The value.
+    ///   - fileID: The source `#fileID` associated with the event.
+    ///   - filePath: The source `#filePath` associated with the event.
+    ///   - line: The source `#line` associated with the event.
+    ///   - column: The source `#column` associated with the event.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of the given
+    ///   modification, _e.g._, work performed in associated
+    ///   [`onEvent`](<doc:FeatureProtocol/onEvent(_:consume:perform:)>) actions.
+    @discardableResult
+    public func post<K>(key: K.Type, value: K.Value, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(CancellationError) -> Task<Void, Never>? where K : ComposableArchitecture2.FeatureEventKey
+
+    /// Posts an event.
+    ///
+    /// - Parameters:
+    ///   - event: The event to post.
+    ///   - fileID: The source `#fileID` associated with the event.
+    ///   - filePath: The source `#filePath` associated with the event.
+    ///   - line: The source `#line` associated with the event.
+    ///   - column: The source `#column` associated with the event.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of the given
+    ///   modification, _e.g._, work performed in associated
+    ///   [`onEvent`](<doc:FeatureProtocol/onEvent(_:consume:perform:)>) actions.
+    @discardableResult
+    public func post<K>(_ event: K, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(CancellationError) -> Task<Void, Never>? where K : ComposableArchitecture2.FeatureEventKey, K == K.Value
+
+    /// The store's dependencies.
+    public var dependencies: Dependencies.DependencyValues { get throws }
+
+    /// Dismisses the feature if it is currently presented.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `@Environment(\.dismiss)`
+    /// > key, except instead of telling the presenting parent view to dismiss, it tells the
+    /// > presenting parent feature.
+    ///
+    /// - Parameters:
+    ///   - fileID: The source `#fileID` associated with the dismissal.
+    ///   - line: The source `#line` associated with the dismissal.
+    /// - Returns: An optional task tied to any asynchronous work performed during dismissal, _e.g._,
+    ///   work performed in associated
+    ///   [`onDismount`](<doc:FeatureProtocol/onDismount(name:priority:_:fileID:filePath:line:column:)>)
+    ///   actions.
+    @discardableResult
+    public func dismiss(fileID: StaticString = #fileID, line: UInt = #line) throws -> Task<Void, Never>?
+
+    /// A Boolean value that indicates whether the feature associated with this feature is currently
+    /// presented.
+    ///
+    /// To dismiss the currently presented feature, use ``dismiss(fileID:line:)``.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's
+    /// > `@Environment(\.isPresented)` key.
+    public var isPresented: Bool { get }
+
+    public mutating func _mountProperty<F>(in core: some ComposableArchitecture2._Core, container feature: ComposableArchitecture2._GraphValue<F>, fieldName: String?) where F : ComposableArchitecture2.FeatureProtocol
+}
+
+public typealias FeatureStoreOf<F> = ComposableArchitecture2.FeatureStore<F.State, F.Action> where F : ComposableArchitecture2.FeatureProtocol
+
+/// A type that collects multiple instances of a feature into a single unit.
+///
+/// > Tip: This is the ComposableArchitecture equivalent to SwiftUI stacks, except instead of
+/// > describing the order in which views are rendered, it describes the order in which feature
+/// > logic is executed.
+public struct Features<State, Action, Content> : ComposableArchitecture2.FeatureProtocol where State == Content.State, Action == Content.Action, Content : ComposableArchitecture2.FeatureProtocol {
+
+    /// Creates a group of features.
+    ///
+    /// - Parameter content: A ``FeatureBuilder`` that produces the features to group.
+    public init(@ComposableArchitecture2.FeatureBuilder<State, Action> _ content: () -> Content)
+
+    public static func _mountFeature(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.Features<State, Action, Content>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+    public static func _routeAction(action: Action, feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.Features<State, Action, Content>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+    public func _isIdentical(to other: ComposableArchitecture2.Features<State, Action, Content>) -> Bool
+}
+
+/// A type that applies dismiss behavior to an element of a collection of child features.
+public protocol ForEachDismissStyle {
+
+    /// Dismisses an element from a collection of child features.
+    ///
+    /// - Parameters:
+    ///   - collection: A collection of child feature states.
+    ///   - index: The index of the element to be dismissed.
+    func dismiss<C>(_ collection: inout C, at index: C.Index) where C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection
+}
+
+extension ForEachDismissStyle where Self == ComposableArchitecture2.ListForEachDismissStyle {
+
+    /// A dismiss style that removes a given element from a list.
+    public static var list: ComposableArchitecture2.ListForEachDismissStyle { get }
+}
+
+extension ForEachDismissStyle where Self == ComposableArchitecture2.StackForEachDismissStyle {
+
+    /// A dismiss style that pops an element and its successors from the stack.
+    public static var stack: ComposableArchitecture2.StackForEachDismissStyle { get }
+}
+
+/// A dismiss style that removes a given element from a list.
+public struct ListForEachDismissStyle : ComposableArchitecture2.ForEachDismissStyle {
+
+    /// Creates a list dismiss style.
+    ///
+    /// You can also use ``list`` to construct this style.
+    public init()
+
+    /// Dismisses an element from a collection of child features.
+    ///
+    /// - Parameters:
+    ///   - collection: A collection of child feature states.
+    ///   - index: The index of the element to be dismissed.
+    public func dismiss<C>(_ collection: inout C, at index: C.Index) where C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection
+}
+
+public struct ModifiedFeature<Base, Modifier> : ComposableArchitecture2.FeatureProtocol where Base : ComposableArchitecture2.FeatureProtocol, Modifier : ComposableArchitecture2.FeatureModifier, Base.Action == Modifier.Action, Base.State == Modifier.State {
+
+    public static func _mountFeature(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.ModifiedFeature<Base, Modifier>>, inputs: ComposableArchitecture2._FeatureInputs<Base.State, Base.Action>, core: some ComposableArchitecture2._Core<Base.State, Base.Action>)
+
+    public static func _routeAction(action: Base.Action, feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.ModifiedFeature<Base, Modifier>>, inputs: ComposableArchitecture2._FeatureInputs<Base.State, Base.Action>, core: some ComposableArchitecture2._Core<Base.State, Base.Action>)
+
+    public func _isIdentical(to other: ComposableArchitecture2.ModifiedFeature<Base, Modifier>) -> Bool
+}
+
+/// A feature that dismisses itself after receiving a user action.
+///
+/// This protocol provides a default implementation of ``FeatureProtocol/body`` that attaches the
+/// ``FeatureProtocol/prompt()`` modifier to an otherwise empty feature. If you provide your own
+/// `body`, the protocol becomes a no-op and dismissal is not automatic.
+///
+/// The protocol is particularly useful for embedding a prompt in a feature "destination" enum. For
+/// example, a feature might embed an alert as one destination of an [`ifLet`](<doc:FeatureProtocol/ifLet(_:action:_:fileID:filePath:line:column:)>) feature:
+///
+/// ```swift
+/// @Feature struct SaveAlert: Prompt {
+///   enum Action {
+///     case abandonTapped
+///     case saveTapped
+///   }
+/// }
+///
+/// @Feature enum Destination {
+///   case saveAlert(SaveAlert)
+///   // Other destination cases...
+/// }
+///
+/// @Feature struct Composer {
+///   struct State {
+///     var destination: Destination.State?
+///     var message = ""
+///   }
+///   enum Action {
+///     case closeTapped
+///     case destination(Destination.Action)
+///   }
+///   var body: some Feature {
+///     Update { state, action in
+///       switch action {
+///       case .closeTapped:
+///         state.destination = .saveAlert(SaveAlert.State())
+///       case .destination(let action):
+///         switch action {
+///         case .saveAlert(.abandonTapped):
+///           break  // Handle abandon...
+///         case .saveAlert(.saveTapped):
+///           break  // Handle save...
+///         }
+///       }
+///     }
+///     .ifLet(\.destination, action: \.destination) {
+///       Destination.body
+///     }
+///   }
+/// }
+/// ```
+///
+/// Applying the `Prompt` protocol to `SaveAlert` ensures the destination state will automatically
+/// be set to `nil` after an alert action is sent. This helps to ensure correctness and simplify
+/// testing: instead of having to explicitly play back SwiftUI's dismissal as a test store
+/// modification, this behavior is baked into the feature:
+///
+/// ```swift
+/// store.send(.destination(.saveAlert(.saveTapped))) {
+///   $0.destination = nil
+/// }
+/// ```
+public protocol Prompt : ComposableArchitecture2.FeatureProtocol {
+}
+
+extension Prompt {
+
+    public var body: some ComposableArchitecture2.FeatureProtocol<Self.State, Self.Action> { get }
+}
+
+/// Embeds a child feature in a parent domain.
+public struct Scope<State, Action, Child> : ComposableArchitecture2.FeatureProtocol where Child : ComposableArchitecture2.FeatureProtocol {
+
+    /// Creates a child feature for the given domain.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A writable key path to the child feature's state.
+    ///   - actionKeyPath: A case key path to the child feature's actions.
+    ///   - child: A child feature that manages the given domain.
+    public init<S, A>(_ stateKeyPath: WritableKeyPath<State, S>, action actionKeyPath: CasePaths.CaseKeyPath<Action, A>, @ComposableArchitecture2.FeatureBuilder<S, A> _ child: () -> Child) where S == Child.State, A == Child.Action
+
+    public static func _mountFeature(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.Scope<State, Action, Child>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+    public static func _routeAction(action: Action, feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.Scope<State, Action, Child>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+    public func _isIdentical(to other: ComposableArchitecture2.Scope<State, Action, Child>) -> Bool
+}
+
+/// A wrapper that holds a child feature's state and grants the child its own runtime.
+///
+/// Spawning is an alternative to scoping for composing parent and child features. Where a scoped
+/// child has its actions integrated into the parent domain, a spawned child has its own runtime
+/// where parent and child actions are processed independently. Spawning can be more efficient for
+/// complex or performance-critical features, where actions do not have to be routed through many
+/// layers of composed features. While parents of spawned features cannot intercept or react to
+/// child actions, they can still observe changes to child state, react to events, preferences,
+/// dismissal, and even fire triggers.
+///
+/// You hold the child's state in a `Spawn` value in parent state, then attach a child feature to
+/// that location with ``FeatureProtocol/spawn(_:_:)``, ``FeatureProtocol/ifLet(_:_:)``,
+/// ``FeatureProtocol/ifCaseLet(_:_:)``, or ``FeatureProtocol/forEach(_:dismissStyle:_:)``.
+///
+/// ```swift
+/// @Feature struct Parent {
+///   struct State {
+///     var child = Spawn(Counter.State())
+///   }
+///   var body: some Feature {
+///     Update { /* ... */ }
+///       .spawn(\.child) {
+///         Counter()
+///       }
+///   }
+/// }
+/// ```
+///
+/// In a SwiftUI view, derive a child ``Store`` from a parent with
+/// ``Store/spawn(_:fileID:filePath:line:column:)``.
+@dynamicMemberLookup public struct Spawn<Child> where Child : ComposableArchitecture2.FeatureProtocol {
+
+    /// Creates a spawn for child state.
+    ///
+    /// - Parameter initialState: The initial state of the child feature.
+    public init(_ initialState: Child.State)
+
+    /// Creates a spawn for child state.
+    ///
+    /// - Parameter initialState: The initial state of the child feature.
+    public init<S>(_ initialState: S) where Child == S.Feature, S : ComposableArchitecture2.FeatureState, S == Child.State
+
+    /// The current state of the child feature.
+    public var state: Child.State
+
+    /// Accesses a property of state.
+    ///
+    /// Swift invokes this subscript when calling a property on the spawn that matches a property of
+    /// state:
+    ///
+    /// ```diff
+    /// -child.state.count
+    /// +child.count
+    /// ```
+    public subscript<Member>(dynamicMember keyPath: KeyPath<Child.State, Member>) -> Member { get }
+
+    /// Accesses a property of state.
+    ///
+    /// Swift invokes this subscript when calling a property on the spawn that matches a property of
+    /// state:
+    ///
+    /// ```diff
+    /// -child.state.count
+    /// +child.count
+    /// ```
+    public subscript<Member>(dynamicMember keyPath: WritableKeyPath<Child.State, Member>) -> Member
+}
+
+extension Spawn : Decodable where Child.State : Decodable {
+
+    /// Creates a new instance by decoding from the given decoder.
+    ///
+    /// This initializer throws an error if reading from the decoder fails, or
+    /// if the data read is corrupted or otherwise invalid.
+    ///
+    /// - Parameter decoder: The decoder to read data from.
+    public init(from decoder: any Decoder) throws
+}
+
+extension Spawn : Encodable where Child.State : Encodable {
+
+    /// Encodes this value into the given encoder.
+    ///
+    /// If the value fails to encode anything, `encoder` will encode an empty
+    /// keyed container in its place.
+    ///
+    /// This function throws an error if any values are invalid for the given
+    /// encoder's format.
+    ///
+    /// - Parameter encoder: The encoder to write data to.
+    public func encode(to encoder: any Encoder) throws
+}
+
+extension Spawn : Equatable where Child.State : Equatable {
+
+    /// Returns a Boolean value indicating whether two values are equal.
+    ///
+    /// Equality is the inverse of inequality. For any values `a` and `b`,
+    /// `a == b` implies that `a != b` is `false`.
+    ///
+    /// - Parameters:
+    ///   - lhs: A value to compare.
+    ///   - rhs: Another value to compare.
+    public static func == (lhs: ComposableArchitecture2.Spawn<Child>, rhs: ComposableArchitecture2.Spawn<Child>) -> Bool
+}
+
+extension Spawn : Hashable where Child.State : Hashable {
+
+    /// Hashes the essential components of this value by feeding them into the
+    /// given hasher.
+    ///
+    /// Implement this method to conform to the `Hashable` protocol. The
+    /// components used for hashing must be the same as the components compared
+    /// in your type's `==` operator implementation. Call `hasher.combine(_:)`
+    /// with each of these components.
+    ///
+    /// - Important: In your implementation of `hash(into:)`,
+    ///   don't call `finalize()` on the `hasher` instance provided,
+    ///   or replace it with a different instance.
+    ///   Doing so may become a compile-time error in the future.
+    ///
+    /// - Parameter hasher: The hasher to use when combining the components
+    ///   of this instance.
+    public func hash(into hasher: inout Hasher)
+}
+
+extension Spawn : DebugSnapshots.DebugSnapshotConvertible where Child.State : DebugSnapshots.DebugSnapshotConvertible {
+
+    public static func _debugSnapshot(_ value: ComposableArchitecture2.Spawn<Child>, visitor: inout DebugSnapshots._DebugSnapshotVisitor) -> Child.State.DebugSnapshot
+}
+
+/// A dismiss style that pops an element and its successors from the stack.
+public struct StackForEachDismissStyle : ComposableArchitecture2.ForEachDismissStyle {
+
+    /// Creates a stack dismiss style.
+    ///
+    /// You can also use ``stack`` to construct this style.
+    public init()
+
+    /// Dismisses an element from a collection of child features.
+    ///
+    /// - Parameters:
+    ///   - collection: A collection of child feature states.
+    ///   - index: The index of the element to be dismissed.
+    public func dismiss<C>(_ collection: inout C, at index: C.Index) where C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection
+}
+
+/// A type that represents an enumeration of many features.
+///
+/// Use the ``Feature()`` macro on an enumeration to synthesize a conformance of this protocol:
+///
+/// ```swift
+/// @Feature enum Destination {}
+/// ```
+public protocol StaticFeature<State, Action> : ComposableArchitecture2.FeatureProtocol where Self.Action == Self.Body.Action, Self.Body : ComposableArchitecture2.FeatureProtocol, Self.State == Self.Body.State {
+
+    /// An enumeration of many feature states.
+    associatedtype State = Self.State
+
+    /// An enumeration of many feature actions.
+    associatedtype Action = Self.Action
+
+    /// An enumeration of many features.
+    associatedtype Body = Self.Body
+
+    /// A type that can be destructured into the store actor of this feature's current case.
+    @available(iOS 26, macOS 26, tvOS 26, watchOS 26, *)
+    associatedtype StoreActorEnumeration
+
+    /// A type that can be destructured into the store of this feature's current case.
+    associatedtype StoreEnumeration : ComposableArchitecture2.StoreEnumerationProtocol where Self == Self.StoreEnumeration.Base
+
+    /// The content and behavior of the features.
+    @ComposableArchitecture2.FeatureBuilder<Self.State, Self.Action> static var body: Self.Body { get }
+
+    /// Creates a store actor enumeration from a store actor of a static feature.
+    ///
+    /// You do not call this function. ComposableArchitecture call it for you from various store
+    /// scoping methods.
+    ///
+    /// - Parameter store: A store actor of a static feature.
+    /// - Returns: A store actor enumeration.
+    @available(iOS 26, macOS 26, tvOS 26, watchOS 26, *)
+    static func `switch`(store: isolated ComposableArchitecture2.StoreActor<Self.State, Self.Action>) -> Self.StoreActorEnumeration
+
+    /// Creates a store enumeration from a store of a static feature.
+    ///
+    /// You do not typically invoke this function. ComposableArchitecture calls this function from
+    /// various store scoping methods.
+    ///
+    /// - Parameter store: A store of a static feature.
+    /// - Returns: A store enumeration
+    @MainActor static func `switch`(store: ComposableArchitecture2.Store<Self.State, Self.Action>) -> Self.StoreEnumeration
+}
+
+extension StaticFeature {
+
+    /// The content and behavior of the feature.
+    ///
+    /// When you implement a custom feature, you must implement a computed `body` property to provide
+    /// the content for your feature. Return a feature that's composed of built-in features that
+    /// ComposableArchitecture provides, plus other composite features that you've already defined:
+    ///
+    /// ```swift
+    /// @Feature struct MyFeature {
+    ///   struct State {
+    ///     var count = 0
+    ///   }
+    ///   enum Action {
+    ///     case incrementButtonTapped
+    ///   }
+    ///   var body: some Feature {
+    ///     Update { state, action in
+    ///       switch action {
+    ///       case .incrementButtonTapped:
+    ///         state.count += 1
+    ///       }
+    ///     }
+    ///   }
+    /// }
+    /// ```
+    public var body: Self.Body { get }
+}
+
+/// The runtime of a feature.
+@MainActor @dynamicMemberLookup final public class Store<State, Action> : Observable {
+
+    /// Creates a store for the given feature and initial state.
+    ///
+    /// - Parameters:
+    ///   - initialState: Initial state passed to the feature.
+    ///   - feature: The feature.
+    @MainActor public convenience init<F>(initialState: State, @ComposableArchitecture2.FeatureBuilder<State, Action> feature: () -> F) where State == F.State, Action == F.Action, F : ComposableArchitecture2.FeatureProtocol
+
+    deinit
+
+    /// The state of this store.
+    @MainActor public var state: State { get }
+
+    /// Accesses a property of state.
+    ///
+    /// Swift invokes this subscript when calling a property on the store that matches a property of
+    /// state:
+    ///
+    /// ```diff
+    /// -store.state.count
+    /// +store.count
+    /// ```
+    @MainActor public subscript<Member>(dynamicMember keyPath: sending KeyPath<State, Member>) -> Member { get }
+
+    /// Sends an action into the store.
+    ///
+    /// - Parameters:
+    ///   - action: An action.
+    ///   - fileID: The source `#fileID` associated with the action.
+    ///   - filePath: The source `#filePath` associated with the action.
+    ///   - line: The source `#line` associated with the action.
+    ///   - column: The source `#column` associated with the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    @MainActor public func send(_ action: Action, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>?
+
+    /// Dismisses the feature if it is currently presented.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `@Environment(\.dismiss)`
+    /// > key, except instead of telling the presenting parent view to dismiss, it tells the
+    /// > presenting parent feature.
+    ///
+    /// - Parameters:
+    ///   - fileID: The source `#fileID` associated with the dismissal.
+    ///   - filePath: The source `#filePath` associated with the dismissal.
+    ///   - line: The source `#line` associated with the dismissal.
+    ///   - column: The source `#column` associated with the dismissal.
+    /// - Returns: An optional task tied to any asynchronous work performed during dismissal, _e.g._,
+    ///   work performed in associated
+    ///   [`onDismount`](<doc:FeatureProtocol/onDismount(name:priority:_:fileID:filePath:line:column:)>)
+    ///   actions.
+    @discardableResult
+    @MainActor public func dismiss(fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>?
+
+    /// A Boolean value that indicates whether the feature associated with this feature is currently
+    /// presented.
+    ///
+    /// To dismiss the currently presented feature, use ``dismiss(fileID:filePath:line:column:)``.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's
+    /// > `@Environment(\.isPresented)` key.
+    @MainActor public var isPresented: Bool { get }
+
+    /// The store's dependencies.
+    @MainActor public var dependencies: Dependencies.DependencyValues { get }
+
+    /// Scopes this store to a child feature.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to child state.
+    ///   - actionKeyPath: A case key path to child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A store of a child feature.
+    @MainActor public func scope<S, A>(_ stateKeyPath: WritableKeyPath<State, S>, action actionKeyPath: CasePaths.CaseKeyPath<Action, A>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.Store<S, A>
+
+    /// Scopes this store to an optional child feature.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to optional child state.
+    ///   - actionKeyPath: A case key path to child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A store of a child feature, or `nil` if no child state is present.
+    @MainActor public func scope<S, A>(_ stateKeyPath: WritableKeyPath<State, S?>, action actionKeyPath: CasePaths.CaseKeyPath<Action, A>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.Store<S, A>?
+
+    /// Scopes this store to a child feature case.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A case key path to child state.
+    ///   - actionKeyPath: A case key path to child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A store of a child feature, or `nil` if child state holds a different case.
+    @MainActor public func scope<S, A>(_ stateKeyPath: CasePaths.CaseKeyPath<State, S>, action actionKeyPath: CasePaths.CaseKeyPath<Action, A>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.Store<S, A>?
+
+    /// Scopes this store to a collection of child features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a collection of child states.
+    ///   - actionKeyPath: A case key path to identified child actions.
+    ///   - idKeyPath: A key path to child identity.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A collection of child stores.
+    @MainActor public func scope<C, ID, A>(_ stateKeyPath: WritableKeyPath<State, C>, action actionKeyPath: CasePaths.CaseKeyPath<Action, (ID, A)>, id idKeyPath: KeyPath<C.Element, ID>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> [ComposableArchitecture2.Store<C.Element, A>] where C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection, ID : Hashable
+
+    /// Scopes this store to a collection of child features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a collection of child states.
+    ///   - actionKeyPath: A case key path to identified child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A collection of child stores.
+    @MainActor public func scope<C, A>(_ stateKeyPath: WritableKeyPath<State, C>, action actionKeyPath: CasePaths.CaseKeyPath<Action, (C.Element.ID, A)>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> [ComposableArchitecture2.Store<C.Element, A>] where C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection, C.Element : Identifiable
+
+    /// Spawns a store to a child feature.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to spawned child state.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A child store.
+    @MainActor public func spawn<Child>(_ stateKeyPath: KeyPath<State, ComposableArchitecture2.Spawn<Child>>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.Store<Child.State, Child.Action> where Child : ComposableArchitecture2.FeatureProtocol
+
+    /// Spawns a store to an optional child feature.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to optional spawned child state.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A child store, or `nil` if no child state is present.
+    @MainActor public func spawn<Child>(_ stateKeyPath: KeyPath<State, ComposableArchitecture2.Spawn<Child>?>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.Store<Child.State, Child.Action>? where Child : ComposableArchitecture2.FeatureProtocol
+
+    /// Spawns a store to a child feature case.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a case of spawned child state.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A child store.
+    @MainActor public func spawn<Child>(_ stateKeyPath: CasePaths.CaseKeyPath<State, ComposableArchitecture2.Spawn<Child>>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.Store<Child.State, Child.Action>? where Child : ComposableArchitecture2.FeatureProtocol
+
+    /// Spawns a collection of stores of child features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a collection of spawned child states.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A child store.
+    @MainActor public func spawn<C, Child>(_ stateKeyPath: KeyPath<State, C>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> [ComposableArchitecture2.Store<Child.State, Child.Action>] where C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection, Child : ComposableArchitecture2.FeatureProtocol, C.Element == ComposableArchitecture2.Spawn<Child>
+}
+
+extension Store where State : ComposableArchitecture2.FeatureState, State == State.Feature.State, Action == State.Feature.Action, State.Feature : ComposableArchitecture2.StaticFeature {
+
+    /// Scopes this store to a store enumeration.
+    @MainActor public var enumeration: State.Feature.StoreEnumeration { get }
+}
+
+extension Store {
+
+    /// Scopes this store to a store enumeration.
+    ///
+    /// Used to switch over an enumeration of features to derive a store for each case:
+    ///
+    /// ```swift
+    /// switch store.scope(\.home, action: \.home) {
+    /// case .loggedIn(let store):
+    ///   LoggedInView(store: store)
+    /// case .loggedOut(let store):
+    ///   LoggedOutStore(store: store)
+    /// }
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to an enumeration of child domain states.
+    ///   - actionKeyPath: A case key path to an enumeration of child domain actions.
+    /// - Returns: A store enumeration.
+    @MainActor public func scope<S>(_ stateKeyPath: WritableKeyPath<State, S>, action actionKeyPath: CasePaths.CaseKeyPath<Action, S.Feature.Action>) -> S.Feature.StoreEnumeration where S : ComposableArchitecture2.FeatureState, S == S.Feature.State, S.Feature : ComposableArchitecture2.StaticFeature
+}
+
+extension Store : ObservableObject {
+}
+
+extension Store : Equatable {
+
+    /// Returns a Boolean value indicating whether two values are equal.
+    ///
+    /// Equality is the inverse of inequality. For any values `a` and `b`,
+    /// `a == b` implies that `a != b` is `false`.
+    ///
+    /// - Parameters:
+    ///   - lhs: A value to compare.
+    ///   - rhs: Another value to compare.
+    nonisolated public static func == (lhs: ComposableArchitecture2.Store<State, Action>, rhs: ComposableArchitecture2.Store<State, Action>) -> Bool
+}
+
+extension Store : Hashable {
+
+    /// Hashes the essential components of this value by feeding them into the
+    /// given hasher.
+    ///
+    /// Implement this method to conform to the `Hashable` protocol. The
+    /// components used for hashing must be the same as the components compared
+    /// in your type's `==` operator implementation. Call `hasher.combine(_:)`
+    /// with each of these components.
+    ///
+    /// - Important: In your implementation of `hash(into:)`,
+    ///   don't call `finalize()` on the `hasher` instance provided,
+    ///   or replace it with a different instance.
+    ///   Doing so may become a compile-time error in the future.
+    ///
+    /// - Parameter hasher: The hasher to use when combining the components
+    ///   of this instance.
+    nonisolated public func hash(into hasher: inout Hasher)
+}
+
+extension Store : Identifiable {
+
+    /// A type representing the stable identity of the entity associated with
+    /// an instance.
+    @MainActor public struct ID : Hashable {
+    }
+
+    /// The stable identity of the entity associated with this instance.
+    @MainActor public var id: ComposableArchitecture2.Store<State, Action>.ID { get }
+}
+
+/// The runtime of a feature.
+@available(iOS 26, macOS 26, tvOS 26, watchOS 26, *)
+@dynamicMemberLookup public actor StoreActor<State, Action> {
+
+    /// Creates a store for the given feature and initial state.
+    ///
+    /// - Parameters:
+    ///   - initialState: Initial state passed to the feature.
+    ///   - feature: The feature.
+    public convenience init<F>(initialState: State, @ComposableArchitecture2.FeatureBuilder<State, Action> feature: () -> F) async where State == F.State, Action == F.Action, F : ComposableArchitecture2.FeatureProtocol
+
+    deinit
+
+    /// The state of this store.
+    public var state: State { get }
+
+    /// Accesses a property of state.
+    ///
+    /// Swift invokes this subscript when calling a property on the store that matches a property of
+    /// state:
+    ///
+    /// ```diff
+    /// -await store.state.count
+    /// +await store.count
+    /// ```
+    public subscript<Member>(dynamicMember keyPath: sending KeyPath<State, Member>) -> Member { get }
+
+    /// Sends an action into the store.
+    ///
+    /// - Parameters:
+    ///   - action: An action.
+    ///   - fileID: The source `#fileID` associated with the action.
+    ///   - filePath: The source `#filePath` associated with the action.
+    ///   - line: The source `#line` associated with the action.
+    ///   - column: The source `#column` associated with the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    public func send(_ action: Action, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>?
+
+    /// Dismisses the feature if it is currently presented.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's `@Environment(\.dismiss)`
+    /// > key, except instead of telling the presenting parent view to dismiss, it tells the
+    /// > presenting parent feature.
+    ///
+    /// - Parameters:
+    ///   - fileID: The source `#fileID` associated with the dismissal.
+    ///   - filePath: The source `#filePath` associated with the dismissal.
+    ///   - line: The source `#line` associated with the dismissal.
+    ///   - column: The source `#column` associated with the dismissal.
+    /// - Returns: An optional task tied to any asynchronous work performed during dismissal, _e.g._,
+    ///   work performed in associated
+    ///   [`onDismount`](<doc:FeatureProtocol/onDismount(name:priority:_:fileID:filePath:line:column:)>)
+    ///   actions.
+    @discardableResult
+    public func dismiss(fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>?
+
+    /// A Boolean value that indicates whether the feature associated with this feature is currently
+    /// presented.
+    ///
+    /// To dismiss the currently presented feature, use ``dismiss(fileID:filePath:line:column:)``.
+    ///
+    /// > Tip: This is the ComposableArchitecture equivalent to SwiftUI's
+    /// > `@Environment(\.isPresented)` key.
+    public var isPresented: Bool { get }
+
+    /// The store's dependencies.
+    public var dependencies: Dependencies.DependencyValues { get }
+
+    /// Scopes this store to a child feature.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to child state.
+    ///   - actionKeyPath: A case key path to child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A store of a child feature.
+    public func scope<S, A>(_ stateKeyPath: WritableKeyPath<State, S>, action actionKeyPath: CasePaths.CaseKeyPath<Action, A>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.StoreActor<S, A>
+
+    /// Scopes this store to an optional child feature.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to optional child state.
+    ///   - actionKeyPath: A case key path to child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A store of a child feature, or `nil` if no child state is present.
+    public func scope<S, A>(_ stateKeyPath: WritableKeyPath<State, S?>, action actionKeyPath: CasePaths.CaseKeyPath<Action, A>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.StoreActor<S, A>?
+
+    /// Scopes this store to a child feature case.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A case key path to child state.
+    ///   - actionKeyPath: A case key path to child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A store of a child feature, or `nil` if child state holds a different case.
+    public func scope<S, A>(_ stateKeyPath: CasePaths.CaseKeyPath<State, S>, action actionKeyPath: CasePaths.CaseKeyPath<Action, A>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.StoreActor<S, A>?
+
+    /// Scopes this store to a collection of child features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a collection of child state.
+    ///   - actionKeyPath: A case key path to identified child actions.
+    ///   - idKeyPath: A key path to child identity.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A collection of child stores.
+    public func scope<C, ID, A>(_ stateKeyPath: WritableKeyPath<State, C>, action actionKeyPath: CasePaths.CaseKeyPath<Action, (ID, A)>, id idKeyPath: KeyPath<C.Element, ID>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> [ComposableArchitecture2.StoreActor<C.Element, A>] where C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection, ID : Hashable
+
+    /// Scopes this store to a collection of child features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a collection of child state.
+    ///   - actionKeyPath: A case key path to identified child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A collection of child stores.
+    public func scope<C, A>(_ stateKeyPath: WritableKeyPath<State, C>, action actionKeyPath: CasePaths.CaseKeyPath<Action, (C.Element.ID, A)>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> [ComposableArchitecture2.StoreActor<C.Element, A>] where C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection, C.Element : Identifiable
+
+    /// Spawns a store to a child feature.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to spawned child state.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A child store.
+    public func spawn<Child>(_ stateKeyPath: KeyPath<State, ComposableArchitecture2.Spawn<Child>>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.StoreActor<Child.State, Child.Action> where Child : ComposableArchitecture2.FeatureProtocol
+
+    /// Spawns a store to an optional child feature.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to optional spawned child state.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A child store, or `nil` if no child state is present.
+    public func spawn<Child>(_ stateKeyPath: KeyPath<State, ComposableArchitecture2.Spawn<Child>?>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.StoreActor<Child.State, Child.Action>? where Child : ComposableArchitecture2.FeatureProtocol
+
+    /// Spawns a store to a child feature case.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a case of spawned child state.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A child store.
+    public func spawn<Child>(_ stateKeyPath: CasePaths.CaseKeyPath<State, ComposableArchitecture2.Spawn<Child>>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.StoreActor<Child.State, Child.Action>? where Child : ComposableArchitecture2.FeatureProtocol
+
+    /// Spawns a collection of stores of child features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a collection of spawned child states.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A child store.
+    public func spawn<C, Child>(_ stateKeyPath: KeyPath<State, C>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> [ComposableArchitecture2.StoreActor<Child.State, Child.Action>] where C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection, Child : ComposableArchitecture2.FeatureProtocol, C.Element == ComposableArchitecture2.Spawn<Child>
+
+    /// Retrieve the executor for this actor as an optimized, unowned
+    /// reference.
+    ///
+    /// This property must always evaluate to the same executor for a
+    /// given actor instance, and holding on to the actor must keep the
+    /// executor alive.
+    ///
+    /// This property will be implicitly accessed when work needs to be
+    /// scheduled onto this actor.  These accesses may be merged,
+    /// eliminated, and rearranged with other work, and they may even
+    /// be introduced when not strictly required.  Visible side effects
+    /// are therefore strongly discouraged within this property.
+    ///
+    /// - SeeAlso: ``SerialExecutor``
+    /// - SeeAlso: ``TaskExecutor``
+    nonisolated public var unownedExecutor: UnownedSerialExecutor { get }
+}
+
+@available(iOS 26, macOS 26, tvOS 26, watchOS 26, *)
+extension StoreActor where State : ComposableArchitecture2.FeatureState, State == State.Feature.State, Action == State.Feature.Action, State.Feature : ComposableArchitecture2.StaticFeature {
+
+    /// Scopes this store actor to a store actor enumeration.
+    public var enumeration: State.Feature.StoreActorEnumeration { get }
+}
+
+@available(iOS 26, macOS 26, tvOS 26, watchOS 26, *)
+extension StoreActor {
+
+    /// Scopes this store actor to a store actor enumeration.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to an enumeration of child domain states.
+    ///   - actionKeyPath: A case key path to an enumeration of child domain actions.
+    /// - Returns: A store actor enumeration.
+    public func scope<S>(_ stateKeyPath: WritableKeyPath<State, S>, action actionKeyPath: CasePaths.CaseKeyPath<Action, S.Feature.Action>) -> S.Feature.StoreActorEnumeration where S : ComposableArchitecture2.FeatureState, S == S.Feature.State, S.Feature : ComposableArchitecture2.StaticFeature
+}
+
+/// A convenience type alias for referring to a store actor of a given feature.
+///
+/// Instead of specifying two generics:
+///
+/// ```swift
+/// let store: StoreActor<Home.State, Home.Action>
+/// ```
+///
+/// You can specify a single one:
+///
+/// ```swift
+/// let store: StoreActorOf<Home>
+/// ```
+@available(iOS 26, macOS 26, tvOS 26, watchOS 26, *)
+public typealias StoreActorOf<F> = ComposableArchitecture2.StoreActor<F.State, F.Action> where F : ComposableArchitecture2.FeatureProtocol
+
+/// A type that can be destructured into the store of a static feature's current case.
+///
+/// You do not apply this conformance. ComposableArchitecture applies it for you from the
+/// ``Feature()`` macro.
+public protocol StoreEnumerationProtocol<Base> {
+
+    /// A type representing the feature associated with this store enumeration.
+    associatedtype Base : ComposableArchitecture2.FeatureProtocol
+
+    /// The current state of the feature.
+    ///
+    /// You do not call this property. ComposableArchitecture call it for you from various store
+    /// scoping methods.
+    @MainActor var state: Self.Base.State { get }
+}
+
+/// A convenience type alias for referring to a store of a given feature.
+///
+/// Instead of specifying two generics:
+///
+/// ```swift
+/// let store: Store<Home.State, Home.Action>
+/// ```
+///
+/// You can specify a single one:
+///
+/// ```swift
+/// let store: StoreOf<Home>
+/// ```
+public typealias StoreOf<F> = ComposableArchitecture2.Store<F.State, F.Action> where F : ComposableArchitecture2.FeatureProtocol
+
+/// A type that identifies a task added to a feature.
+@propertyWrapper public struct StoreTaskID {
+
+    public internal(set) var name: String? { get }
+
+    public var wrappedValue: ComposableArchitecture2.StoreTaskID { get }
+
+    public var error: (any Error)? { get }
+
+    public var isRunning: Bool { get }
+
+    public init(name: String? = nil)
+
+    nonisolated(nonsending) public func callAsFunction() async throws
+
+    @discardableResult
+    public func cancel(fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>?
+}
+
+extension StoreTaskID {
+
+    public mutating func _mountProperty<F>(in core: some ComposableArchitecture2._Core, container feature: ComposableArchitecture2._GraphValue<F>, fieldName: String?) where F : ComposableArchitecture2.FeatureProtocol
+}
+
+extension StoreTaskID.Storage : nonisolated Observable {
+}
+
+public enum TestExhaustivity : Codable, Sendable, Hashable {
+
+    case on
+
+    case off(showSkippedExpectations: Bool)
+
+    public static var off: ComposableArchitecture2.TestExhaustivity { get }
+}
+
+/// A harness for testing your features.
+///
+/// This is the main actor-isolated version of ``TestStoreActor``, suited to testing
+/// `@MainActor`-isolated features (_i.e._ those defined in modules with default main actor
+/// isolation enabled). Prefer ``TestStoreActor`` to take full advantage of high parallelization in
+/// your tests.
+@MainActor @dynamicMemberLookup final public class TestStore<Subject> where Subject : ComposableArchitecture2.FeatureProtocol, Subject.State : DebugSnapshots.DebugSnapshotConvertible {
+
+    public typealias State = Subject.State
+
+    public typealias Action = Subject.Action
+
+    /// The state of this store.
+    @MainActor public var state: ComposableArchitecture2.TestStore<Subject>.State { get }
+
+    /// Accesses a property of state.
+    ///
+    /// Swift invokes this subscript when calling a property on the store that matches a property of
+    /// state:
+    ///
+    /// ```diff
+    /// -store.state.count
+    /// +store.count
+    /// ```
+    @MainActor public subscript<Member>(dynamicMember keyPath: KeyPath<ComposableArchitecture2.TestStore<Subject>.State, Member>) -> Member { get }
+
+    /// A Boolean value that indicates whether the feature associated with this feature is currently
+    /// presented.
+    ///
+    /// To dismiss the feature, use ``dismount(timeout:fileID:filePath:line:column:)``.
+    @MainActor public var isPresented: Bool { get }
+
+    /// Creates a store for the given feature and initial state.
+    ///
+    /// - Parameters:
+    ///   - initialState: Initial state passed to the feature.
+    ///   - feature: The feature.
+    ///   - fileID: The source `#fileID` associated with the store.
+    ///   - filePath: The source `#filePath` associated with the store.
+    ///   - line: The source `#line` associated with the store.
+    ///   - column: The source `#column` associated with the store.
+    @MainActor public init<State, Action>(initialState: State, feature: () -> Subject, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) where State : DebugSnapshots.DebugSnapshotConvertible, State == Subject.State, Action == Subject.Action
+
+    /// Creates a store for the given feature and initial state.
+    ///
+    /// - Parameters:
+    ///   - initialState: Initial state passed to the feature.
+    ///   - feature: The feature.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     initial mutations made by the feature at mount time by mutating the state it is handed to
+    ///     the expected result.
+    ///   - fileID: The source `#fileID` associated with the store.
+    ///   - filePath: The source `#filePath` associated with the store.
+    ///   - line: The source `#line` associated with the store.
+    ///   - column: The source `#column` associated with the store.
+    @MainActor public init<State, Action, Failure>(initialState: State, feature: () -> Subject, changes updateStateToExpectedResult: (_ state: inout State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(Failure) where State : DebugSnapshots.DebugSnapshotConvertible, State == Subject.State, Action == Subject.Action, Failure : Error
+
+    /// Sends an action into the store.
+    ///
+    /// - Parameters:
+    ///   - action: An action.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the action is received by mutating the state it is
+    ///     handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with sending the action.
+    ///   - filePath: The source `#filePath` associated with sending the action.
+    ///   - line: The source `#line` associated with sending the action.
+    ///   - column: The source `#column` associated with sending the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    @MainActor public func send<Failure>(_ action: ComposableArchitecture2.TestStore<Subject>.Action, changes updateStateToExpectedResult: (_ state: inout ComposableArchitecture2.TestStore<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(Failure) -> Task<Void, Never>? where Failure : Error
+
+    /// Sends an action into the store.
+    ///
+    /// - Parameters:
+    ///   - action: An action.
+    ///   - fileID: The source `#fileID` associated with sending the action.
+    ///   - filePath: The source `#filePath` associated with sending the action.
+    ///   - line: The source `#line` associated with sending the action.
+    ///   - column: The source `#column` associated with sending the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    @MainActor public func send(_ action: ComposableArchitecture2.TestStore<Subject>.Action, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>?
+
+    /// Sends an action into a spawn of the store.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to spawned child state.
+    ///   - action: A child action.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the action is received by mutating the state it is
+    ///     handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with sending the action.
+    ///   - filePath: The source `#filePath` associated with sending the action.
+    ///   - line: The source `#line` associated with sending the action.
+    ///   - column: The source `#column` associated with sending the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    @MainActor public func send<Child, Failure>(to stateKeyPath: KeyPath<ComposableArchitecture2.TestStore<Subject>.State, ComposableArchitecture2.Spawn<Child>>, _ action: Child.Action, changes updateStateToExpectedResult: (_ state: inout ComposableArchitecture2.TestStore<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(Failure) -> Task<Void, Never>? where Child : ComposableArchitecture2.FeatureProtocol, Failure : Error
+
+    /// Sends an action into a spawn of the store.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to spawned child state.
+    ///   - action: A child action.
+    ///   - fileID: The source `#fileID` associated with sending the action.
+    ///   - filePath: The source `#filePath` associated with sending the action.
+    ///   - line: The source `#line` associated with sending the action.
+    ///   - column: The source `#column` associated with sending the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    @MainActor public func send<Child>(to stateKeyPath: KeyPath<ComposableArchitecture2.TestStore<Subject>.State, ComposableArchitecture2.Spawn<Child>>, _ action: Child.Action, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>? where Child : ComposableArchitecture2.FeatureProtocol
+
+    /// Asserts that an action was received by a feature store.
+    ///
+    /// - Parameters:
+    ///   - actionKeyPath: A case key path to the expected action.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     action.
+    ///   - timeout: A duration of time to wait for the action to be received.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the action is received by mutating the state it is
+    ///     handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with receiving the action.
+    ///   - filePath: The source `#filePath` associated with receiving the action.
+    ///   - line: The source `#line` associated with receiving the action.
+    ///   - column: The source `#column` associated with receiving the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    @MainActor public func receive<Value, Failure>(_ actionKeyPath: CasePaths.CaseKeyPath<ComposableArchitecture2.TestStore<Subject>.Action, Value>, _ matcher: ComposableArchitecture2.TestStoreMatcher<Value>? = nil, timeout: Duration = .zero, changes updateStateToExpectedResult: (_ state: inout ComposableArchitecture2.TestStore<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async throws(Failure) -> Task<Void, Never>? where Failure : Error
+
+    /// Asserts that an action was received by a feature store.
+    ///
+    /// - Parameters:
+    ///   - actionKeyPath: A case key path to the expected action.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     action.
+    ///   - timeout: A duration of time to wait for the action to be received.
+    ///   - fileID: The source `#fileID` associated with receiving the action.
+    ///   - filePath: The source `#filePath` associated with receiving the action.
+    ///   - line: The source `#line` associated with receiving the action.
+    ///   - column: The source `#column` associated with receiving the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    @MainActor public func receive<Value>(_ actionKeyPath: CasePaths.CaseKeyPath<ComposableArchitecture2.TestStore<Subject>.Action, Value>, _ matcher: ComposableArchitecture2.TestStoreMatcher<Value>? = nil, timeout: Duration = .zero, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async -> Task<Void, Never>?
+
+    /// Asserts that an action was received by a spawned feature store.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to spawned child state.
+    ///   - actionKeyPath: A case key path to the expected child action.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     action.
+    ///   - timeout: A duration of time to wait for the action to be received.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the action is received by mutating the state it is
+    ///     handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with receiving the action.
+    ///   - filePath: The source `#filePath` associated with receiving the action.
+    ///   - line: The source `#line` associated with receiving the action.
+    ///   - column: The source `#column` associated with receiving the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    @MainActor public func receive<Child, Value, Failure>(from stateKeyPath: KeyPath<ComposableArchitecture2.TestStore<Subject>.State, ComposableArchitecture2.Spawn<Child>>, _ actionKeyPath: CasePaths.CaseKeyPath<Child.Action, Value>, _ matcher: ComposableArchitecture2.TestStoreMatcher<Value>? = nil, timeout: Duration = .zero, changes updateStateToExpectedResult: (_ state: inout ComposableArchitecture2.TestStore<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async throws(Failure) -> Task<Void, Never>? where Child : ComposableArchitecture2.FeatureProtocol, Failure : Error
+
+    /// Asserts that an action was received by a spawned feature store.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to spawned child state.
+    ///   - actionKeyPath: A case key path to the expected child action.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     action.
+    ///   - timeout: A duration of time to wait for the action to be received.
+    ///   - fileID: The source `#fileID` associated with receiving the action.
+    ///   - filePath: The source `#filePath` associated with receiving the action.
+    ///   - line: The source `#line` associated with receiving the action.
+    ///   - column: The source `#column` associated with receiving the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    @MainActor public func receive<Child, Value>(from stateKeyPath: KeyPath<ComposableArchitecture2.TestStore<Subject>.State, ComposableArchitecture2.Spawn<Child>>, _ actionKeyPath: CasePaths.CaseKeyPath<Child.Action, Value>, _ matcher: ComposableArchitecture2.TestStoreMatcher<Value>? = nil, timeout: Duration = .zero, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async -> Task<Void, Never>? where Child : ComposableArchitecture2.FeatureProtocol
+
+    /// Asserts that an event was posted by a feature store.
+    ///
+    /// - Parameters:
+    ///   - key: The event key associated with the expected event.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     event.
+    ///   - timeout: A duration of time to wait for the event to be posted.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the event is received by mutating the state it is
+    ///     handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with receiving the event.
+    ///   - filePath: The source `#filePath` associated with receiving the event.
+    ///   - line: The source `#line` associated with receiving the event.
+    ///   - column: The source `#column` associated with receiving the event.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given event.
+    @discardableResult
+    @MainActor public func receive<K, Failure>(key: K.Type, value matcher: ComposableArchitecture2.TestStoreMatcher<K.Value>? = nil, timeout: Duration = .zero, changes updateStateToExpectedResult: (_ state: inout ComposableArchitecture2.TestStore<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async throws(Failure) -> Task<Void, Never>? where K : ComposableArchitecture2.FeatureEventKey, Failure : Error
+
+    /// Asserts that an event was posted by a feature store.
+    ///
+    /// - Parameters:
+    ///   - key: The event key associated with the expected event.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     event.
+    ///   - timeout: A duration of time to wait for the event to be posted.
+    ///   - fileID: The source `#fileID` associated with receiving the event.
+    ///   - filePath: The source `#filePath` associated with receiving the event.
+    ///   - line: The source `#line` associated with receiving the event.
+    ///   - column: The source `#column` associated with receiving the event.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given event.
+    @discardableResult
+    @MainActor public func receive<K>(key: K.Type, value matcher: ComposableArchitecture2.TestStoreMatcher<K.Value>? = nil, timeout: Duration = .zero, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async -> Task<Void, Never>? where K : ComposableArchitecture2.FeatureEventKey
+
+    /// Modifies a store's state.
+    ///
+    /// Use `modify` to simulate a binding writing to a property of store state.
+    ///
+    /// For example, your SwiftUI view may derive a binding for a text field:
+    ///
+    /// ```swift
+    /// @Bindable var store: StoreOf<JournalEntry>
+    ///
+    /// // ...
+    /// TextField("Today I learned...", text: $store.title)
+    /// ```
+    ///
+    /// To assert against this functionality, you can perform a mutation in the trailing closure of
+    /// `modify`:
+    ///
+    /// ```swift
+    /// store.modify {
+    ///   $0.title = "Road trip"
+    /// } changes: {
+    ///   $0.isSaveButtonEnabled = true
+    /// }
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - body: A closure that mutates the state of a feature.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the modification is received by mutating the state it
+    ///     is handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with the modification.
+    ///   - filePath: The source `#filePath` associated with the modification.
+    ///   - line: The source `#line` associated with the modification.
+    ///   - column: The source `#column` associated with the modification.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the modification.
+    @discardableResult
+    @MainActor public func modify<Failure>(_ body: @escaping (inout ComposableArchitecture2.TestStore<Subject>.State) -> Void, changes updateStateToExpectedResult: (_ state: inout ComposableArchitecture2.TestStore<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(Failure) -> Task<Void, Never>? where Failure : Error
+
+    /// Modifies a store's state.
+    ///
+    /// - Parameters:
+    ///   - body: A closure that mutates the state of a feature.
+    ///   - fileID: The source `#fileID` associated with the modification.
+    ///   - filePath: The source `#filePath` associated with the modification.
+    ///   - line: The source `#line` associated with the modification.
+    ///   - column: The source `#column` associated with the modification.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the modification.
+    @discardableResult
+    @MainActor public func modify(_ body: @escaping (inout ComposableArchitecture2.TestStore<Subject>.State) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>?
+
+    /// Asserts against changes made to store state.
+    ///
+    /// Use `expect` to assert against modifications made asynchronously by a feature store task.
+    ///
+    /// - Parameters:
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature by mutating the state it is handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with the expectation.
+    ///   - filePath: The source `#filePath` associated with the expectation.
+    ///   - line: The source `#line` associated with the expectation.
+    ///   - column: The source `#column` associated with the expectation.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the modification.
+    @discardableResult
+    @MainActor public func expect<Failure>(changes updateStateToExpectedResult: (_ state: inout ComposableArchitecture2.TestStore<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(Failure) -> Task<Void, Never>? where Failure : Error
+
+    /// Dismounts the store's feature.
+    ///
+    /// - Parameters:
+    ///   - timeout: A duration of time to wait for the feature to dismount.
+    ///   - fileID: The source `#fileID` associated with the dismount.
+    ///   - filePath: The source `#filePath` associated with the dismount.
+    ///   - line: The source `#line` associated with the dismount.
+    ///   - column: The source `#column` associated with the dismount.
+    @MainActor public func dismount(timeout: Duration = .zero, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async
+}
+
+/// A harness for testing your features.
+///
+/// This is the actor-isolated counterpart of ``TestStore``, taking full advantage of high
+/// parallelization in your tests. To test `@MainActor`-isolated features (_i.e._ those defined in
+/// modules with default main actor isolation enabled), see ``TestStore``.
+@available(iOS 26, macOS 26, tvOS 26, watchOS 26, *)
+@dynamicMemberLookup final public actor TestStoreActor<Subject> where Subject : ComposableArchitecture2.FeatureProtocol, Subject.State : DebugSnapshots.DebugSnapshotConvertible {
+
+    public typealias State = Subject.State
+
+    public typealias Action = Subject.Action
+
+    /// The state of this store.
+    public var state: ComposableArchitecture2.TestStoreActor<Subject>.State { get }
+
+    /// Accesses a property of state.
+    ///
+    /// Swift invokes this subscript when calling a property on the store that matches a property of
+    /// state:
+    ///
+    /// ```diff
+    /// -store.state.count
+    /// +store.count
+    /// ```
+    public subscript<Member>(dynamicMember keyPath: sending KeyPath<ComposableArchitecture2.TestStoreActor<Subject>.State, Member>) -> Member { get }
+
+    /// A Boolean value that indicates whether the feature associated with this feature is currently
+    /// presented.
+    ///
+    /// To dismiss the feature, use ``dismount(timeout:fileID:filePath:line:column:)``.
+    public var isPresented: Bool { get }
+
+    /// Creates a store for the given feature and initial state.
+    ///
+    /// - Parameters:
+    ///   - initialState: Initial state passed to the feature.
+    ///   - feature: The feature.
+    ///   - fileID: The source `#fileID` associated with the store.
+    ///   - filePath: The source `#filePath` associated with the store.
+    ///   - line: The source `#line` associated with the store.
+    ///   - column: The source `#column` associated with the store.
+    public init<State, Action>(initialState: sending State, feature: sending () -> Subject, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async where State : DebugSnapshots.DebugSnapshotConvertible, State == Subject.State, Action == Subject.Action
+
+    /// Creates a store for the given feature and initial state.
+    ///
+    /// - Parameters:
+    ///   - initialState: Initial state passed to the feature.
+    ///   - feature: The feature.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     initial mutations made by the feature at mount time by mutating the state it is handed to
+    ///     the expected result.
+    ///   - fileID: The source `#fileID` associated with the store.
+    ///   - filePath: The source `#filePath` associated with the store.
+    ///   - line: The source `#line` associated with the store.
+    ///   - column: The source `#column` associated with the store.
+    public init<State, Action, Failure>(initialState: sending State, feature: sending () -> Subject, changes updateStateToExpectedResult: sending (_ state: inout State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async throws(Failure) where State : DebugSnapshots.DebugSnapshotConvertible, State == Subject.State, Action == Subject.Action, Failure : Error
+
+    /// Sends an action into the store.
+    ///
+    /// - Parameters:
+    ///   - action: An action.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the action is received by mutating the state it is
+    ///     handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with sending the action.
+    ///   - filePath: The source `#filePath` associated with sending the action.
+    ///   - line: The source `#line` associated with sending the action.
+    ///   - column: The source `#column` associated with sending the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    public func send<Failure>(_ action: ComposableArchitecture2.TestStoreActor<Subject>.Action, changes updateStateToExpectedResult: sending (_ state: inout ComposableArchitecture2.TestStoreActor<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(Failure) -> Task<Void, Never>? where Failure : Error
+
+    /// Sends an action into the store.
+    ///
+    /// - Parameters:
+    ///   - action: An action.
+    ///   - fileID: The source `#fileID` associated with sending the action.
+    ///   - filePath: The source `#filePath` associated with sending the action.
+    ///   - line: The source `#line` associated with sending the action.
+    ///   - column: The source `#column` associated with sending the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    public func send(_ action: ComposableArchitecture2.TestStoreActor<Subject>.Action, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>?
+
+    /// Sends an action into a spawn of the store.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to spawned child state.
+    ///   - action: A child action.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the action is received by mutating the state it is
+    ///     handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with sending the action.
+    ///   - filePath: The source `#filePath` associated with sending the action.
+    ///   - line: The source `#line` associated with sending the action.
+    ///   - column: The source `#column` associated with sending the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    public func send<Child, Failure>(to stateKeyPath: KeyPath<ComposableArchitecture2.TestStoreActor<Subject>.State, ComposableArchitecture2.Spawn<Child>>, _ action: Child.Action, changes updateStateToExpectedResult: sending (_ state: inout ComposableArchitecture2.TestStoreActor<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(Failure) -> Task<Void, Never>? where Child : ComposableArchitecture2.FeatureProtocol, Failure : Error
+
+    /// Sends an action into a spawn of the store.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to spawned child state.
+    ///   - action: A child action.
+    ///   - fileID: The source `#fileID` associated with sending the action.
+    ///   - filePath: The source `#filePath` associated with sending the action.
+    ///   - line: The source `#line` associated with sending the action.
+    ///   - column: The source `#column` associated with sending the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    public func send<Child>(to stateKeyPath: KeyPath<ComposableArchitecture2.TestStoreActor<Subject>.State, ComposableArchitecture2.Spawn<Child>>, _ action: Child.Action, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>? where Child : ComposableArchitecture2.FeatureProtocol
+
+    /// Asserts that an action was received by a feature store.
+    ///
+    /// - Parameters:
+    ///   - actionKeyPath: A case key path to the expected action.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     action.
+    ///   - timeout: A duration of time to wait for the action to be received.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the action is received by mutating the state it is
+    ///     handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with receiving the action.
+    ///   - filePath: The source `#filePath` associated with receiving the action.
+    ///   - line: The source `#line` associated with receiving the action.
+    ///   - column: The source `#column` associated with receiving the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    public func receive<Value, Failure>(_ actionKeyPath: CasePaths.CaseKeyPath<ComposableArchitecture2.TestStoreActor<Subject>.Action, Value>, _ matcher: ComposableArchitecture2.TestStoreMatcher<Value>? = nil, timeout: Duration = .zero, changes updateStateToExpectedResult: sending (_ state: inout ComposableArchitecture2.TestStoreActor<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async throws(Failure) -> Task<Void, Never>? where Failure : Error
+
+    /// Asserts that an action was received by a feature store.
+    ///
+    /// - Parameters:
+    ///   - actionKeyPath: A case key path to the expected action.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     action.
+    ///   - timeout: A duration of time to wait for the action to be received.
+    ///   - fileID: The source `#fileID` associated with receiving the action.
+    ///   - filePath: The source `#filePath` associated with receiving the action.
+    ///   - line: The source `#line` associated with receiving the action.
+    ///   - column: The source `#column` associated with receiving the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    public func receive<Value>(_ actionKeyPath: CasePaths.CaseKeyPath<ComposableArchitecture2.TestStoreActor<Subject>.Action, Value>, _ matcher: ComposableArchitecture2.TestStoreMatcher<Value>? = nil, timeout: Duration = .zero, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async -> Task<Void, Never>?
+
+    /// Asserts that an action was received by a spawned feature store.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to spawned child state.
+    ///   - actionKeyPath: A case key path to the expected child action.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     action.
+    ///   - timeout: A duration of time to wait for the action to be received.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the action is received by mutating the state it is
+    ///     handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with receiving the action.
+    ///   - filePath: The source `#filePath` associated with receiving the action.
+    ///   - line: The source `#line` associated with receiving the action.
+    ///   - column: The source `#column` associated with receiving the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    public func receive<Child, Value, Failure>(from stateKeyPath: KeyPath<ComposableArchitecture2.TestStoreActor<Subject>.State, ComposableArchitecture2.Spawn<Child>>, _ actionKeyPath: CasePaths.CaseKeyPath<Child.Action, Value>, _ matcher: ComposableArchitecture2.TestStoreMatcher<Value>? = nil, timeout: Duration = .zero, changes updateStateToExpectedResult: sending (_ state: inout ComposableArchitecture2.TestStoreActor<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async throws(Failure) -> Task<Void, Never>? where Child : ComposableArchitecture2.FeatureProtocol, Failure : Error
+
+    /// Asserts that an action was received by a spawned feature store.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to spawned child state.
+    ///   - actionKeyPath: A case key path to the expected child action.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     action.
+    ///   - timeout: A duration of time to wait for the action to be received.
+    ///   - fileID: The source `#fileID` associated with receiving the action.
+    ///   - filePath: The source `#filePath` associated with receiving the action.
+    ///   - line: The source `#line` associated with receiving the action.
+    ///   - column: The source `#column` associated with receiving the action.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given action.
+    @discardableResult
+    public func receive<Child, Value>(from stateKeyPath: KeyPath<ComposableArchitecture2.TestStoreActor<Subject>.State, ComposableArchitecture2.Spawn<Child>>, _ actionKeyPath: CasePaths.CaseKeyPath<Child.Action, Value>, _ matcher: ComposableArchitecture2.TestStoreMatcher<Value>? = nil, timeout: Duration = .zero, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async -> Task<Void, Never>? where Child : ComposableArchitecture2.FeatureProtocol
+
+    /// Asserts that an event was posted by a feature store.
+    ///
+    /// - Parameters:
+    ///   - key: The event key associated with the expected event.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     event.
+    ///   - timeout: A duration of time to wait for the event to be posted.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the event is received by mutating the state it is
+    ///     handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with receiving the event.
+    ///   - filePath: The source `#filePath` associated with receiving the event.
+    ///   - line: The source `#line` associated with receiving the event.
+    ///   - column: The source `#column` associated with receiving the event.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given event.
+    @discardableResult
+    public func receive<K, Failure>(key: K.Type, value matcher: ComposableArchitecture2.TestStoreMatcher<K.Value>? = nil, timeout: Duration = .zero, changes updateStateToExpectedResult: sending (_ state: inout ComposableArchitecture2.TestStoreActor<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async throws(Failure) -> Task<Void, Never>? where K : ComposableArchitecture2.FeatureEventKey, Failure : Error
+
+    /// Asserts that an event was posted by a feature store.
+    ///
+    /// - Parameters:
+    ///   - key: The event key associated with the expected event.
+    ///   - matcher: An optional predicate that can be used to assert against the value held in the
+    ///     event.
+    ///   - timeout: A duration of time to wait for the event to be posted.
+    ///   - fileID: The source `#fileID` associated with receiving the event.
+    ///   - filePath: The source `#filePath` associated with receiving the event.
+    ///   - line: The source `#line` associated with receiving the event.
+    ///   - column: The source `#column` associated with receiving the event.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the given event.
+    @discardableResult
+    public func receive<K>(key: K.Type, value matcher: ComposableArchitecture2.TestStoreMatcher<K.Value>? = nil, timeout: Duration = .zero, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async -> Task<Void, Never>? where K : ComposableArchitecture2.FeatureEventKey
+
+    /// Modifies a store's state.
+    ///
+    /// Use `modify` to simulate a binding writing to a property of store state.
+    ///
+    /// For example, your SwiftUI view may derive a binding for a text field:
+    ///
+    /// ```swift
+    /// @Bindable var store: StoreOf<JournalEntry>
+    ///
+    /// // ...
+    /// TextField("Today I learned...", text: $store.title)
+    /// ```
+    ///
+    /// To assert against this functionality, you can perform a mutation in the trailing closure of
+    /// `modify`:
+    ///
+    /// ```swift
+    /// store.modify {
+    ///   $0.title = "Road trip"
+    /// } changes: {
+    ///   $0.isSaveButtonEnabled = true
+    /// }
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - body: A closure that mutates the state of a feature.
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature when the modification is received by mutating the state it
+    ///     is handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with the modification.
+    ///   - filePath: The source `#filePath` associated with the modification.
+    ///   - line: The source `#line` associated with the modification.
+    ///   - column: The source `#column` associated with the modification.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the modification.
+    @discardableResult
+    public func modify<Failure>(_ body: @escaping (inout ComposableArchitecture2.TestStoreActor<Subject>.State) -> Void, changes updateStateToExpectedResult: sending (_ state: inout ComposableArchitecture2.TestStoreActor<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(Failure) -> Task<Void, Never>? where Failure : Error
+
+    /// Modifies a store's state.
+    ///
+    /// - Parameters:
+    ///   - body: A closure that mutates the state of a feature.
+    ///   - fileID: The source `#fileID` associated with the modification.
+    ///   - filePath: The source `#filePath` associated with the modification.
+    ///   - line: The source `#line` associated with the modification.
+    ///   - column: The source `#column` associated with the modification.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the modification.
+    @discardableResult
+    public func modify(_ body: sending @escaping (inout ComposableArchitecture2.TestStoreActor<Subject>.State) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Task<Void, Never>?
+
+    /// Asserts against changes made to store state.
+    ///
+    /// Use `expect` to assert against modifications made asynchronously by a feature store task.
+    ///
+    /// - Parameters:
+    ///   - updateStateToExpectedResult: A closure that is responsible for asserting against any
+    ///     mutations made by the feature by mutating the state it is handed to the expected result.
+    ///   - fileID: The source `#fileID` associated with the expectation.
+    ///   - filePath: The source `#filePath` associated with the expectation.
+    ///   - line: The source `#line` associated with the expectation.
+    ///   - column: The source `#column` associated with the expectation.
+    /// - Returns: An optional task tied to any asynchronous work performed as a result of receiving
+    ///   the modification.
+    @discardableResult
+    public func expect<Failure>(changes updateStateToExpectedResult: sending (_ state: inout ComposableArchitecture2.TestStoreActor<Subject>.State.DebugSnapshot) throws(Failure) -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) throws(Failure) -> Task<Void, Never>? where Failure : Error
+
+    /// Dismounts the store's feature.
+    ///
+    /// - Parameters:
+    ///   - timeout: A duration of time to wait for the feature to dismount.
+    ///   - fileID: The source `#fileID` associated with the dismount.
+    ///   - filePath: The source `#filePath` associated with the dismount.
+    ///   - line: The source `#line` associated with the dismount.
+    ///   - column: The source `#column` associated with the dismount.
+    public func dismount(timeout: Duration = .zero, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async
+
+    /// Retrieve the executor for this actor as an optimized, unowned
+    /// reference.
+    ///
+    /// This property must always evaluate to the same executor for a
+    /// given actor instance, and holding on to the actor must keep the
+    /// executor alive.
+    ///
+    /// This property will be implicitly accessed when work needs to be
+    /// scheduled onto this actor.  These accesses may be merged,
+    /// eliminated, and rearranged with other work, and they may even
+    /// be introduced when not strictly required.  Visible side effects
+    /// are therefore strongly discouraged within this property.
+    ///
+    /// - SeeAlso: ``SerialExecutor``
+    /// - SeeAlso: ``TaskExecutor``
+    nonisolated public var unownedExecutor: UnownedSerialExecutor { get }
+}
+
+/// A predicate that is used to match test store values, like received actions and events.
+public struct TestStoreMatcher<Value> {
+
+    /// Creates a predicate that is used to match test store values.
+    ///
+    /// - Parameters:
+    ///   - predicate: A function that is used to determine if a given value matches.
+    ///   - message: A function that describes when a given value does not match.
+    ///   - fileID: The source `#fileID` associated with the match.
+    ///   - filePath: The source `#filePath` associated with the match.
+    ///   - line: The source `#line` associated with the match.
+    ///   - column: The source `#column` associated with the match.
+    public init(matching predicate: @escaping (Value) -> Bool, message: @escaping (Value) -> String = { _ in "" }, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column)
+}
+
+extension TestStoreMatcher {
+
+    /// A predicate that is used to match test store values.
+    ///
+    /// - Parameters:
+    ///   - message: An optional description of the match.
+    ///   - predicate: A function that is used to determine if a given value matches.
+    ///   - fileID: The source `#fileID` associated with the match.
+    ///   - filePath: The source `#filePath` associated with the match.
+    ///   - line: The source `#line` associated with the match.
+    ///   - column: The source `#column` associated with the match.
+    /// - Returns: A predicate that is used to match test store values.
+    public static func matching(_ message: @autoclosure @escaping () -> String = "", _ predicate: @escaping (Value) -> Bool, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.TestStoreMatcher<Value>
+}
+
+extension TestStoreMatcher where Value : Equatable {
+
+    /// A value that is used to match test store values.
+    ///
+    /// - Parameters:
+    ///   - expected: A value to match.
+    ///   - message: An optional description of the match.
+    ///   - fileID: The source `#fileID` associated with the match.
+    ///   - filePath: The source `#filePath` associated with the match.
+    ///   - line: The source `#line` associated with the match.
+    ///   - column: The source `#column` associated with the match.
+    /// - Returns: A value that is used to match test store values.
+    public static func equals(_ expected: Value, _ message: @autoclosure @escaping () -> String = "", fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> ComposableArchitecture2.TestStoreMatcher<Value>
+}
+
+/// > Important: Triggers are transparently `Codable` and `Hashable` so that a feature's state
+/// > can still easily synthesize conformances that simply ignore any triggers. Every trigger is
+/// > equal to every other trigger. Do not compare or hash a trigger directly (or use a trigger as
+/// > a dictionary key, for example).
+@propertyWrapper public struct Trigger<Arguments> {
+
+    /// Creates a trigger.
+    public init()
+
+    /// Creates a trigger.
+    public init() where Arguments == ()
+
+    public var wrappedValue: ComposableArchitecture2.Trigger<Arguments>
+
+    /// Fires a trigger.
+    ///
+    /// Don't call this method directly. ComposableArchitecture calls it for you when you call the
+    /// trigger structure:
+    ///
+    /// ```swift
+    /// @Trigger var trigger
+    ///
+    /// trigger()
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - arguments: Arguments associated with firing the trigger.
+    ///   - fileID: The source `#fileID` associated with firing the trigger.
+    ///   - filePath: The source `#filePath` associated with firing the trigger.
+    ///   - line: The source `#line` associated with firing the trigger.
+    ///   - column: The source `#column` associated with firing the trigger.
+    public mutating func callAsFunction<each A>(_ arguments: repeat each A, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) where Arguments == (repeat each A)
+}
+
+extension Trigger {
+
+    public mutating func _mountProperty<F>(in core: some ComposableArchitecture2._Core, container feature: ComposableArchitecture2._GraphValue<F>, fieldName: String?) where F : ComposableArchitecture2.FeatureProtocol
+}
+
+extension Trigger : Decodable {
+
+    /// Creates a new instance by decoding from the given decoder.
+    ///
+    /// This initializer throws an error if reading from the decoder fails, or
+    /// if the data read is corrupted or otherwise invalid.
+    ///
+    /// - Parameter decoder: The decoder to read data from.
+    public init(from decoder: any Decoder) throws
+}
+
+extension Trigger : Encodable {
+
+    /// Encodes this value into the given encoder.
+    ///
+    /// If the value fails to encode anything, `encoder` will encode an empty
+    /// keyed container in its place.
+    ///
+    /// This function throws an error if any values are invalid for the given
+    /// encoder's format.
+    ///
+    /// - Parameter encoder: The encoder to write data to.
+    public func encode(to encoder: any Encoder) throws
+}
+
+extension Trigger : Equatable {
+
+    /// Returns a Boolean value indicating whether two values are equal.
+    ///
+    /// Equality is the inverse of inequality. For any values `a` and `b`,
+    /// `a == b` implies that `a != b` is `false`.
+    ///
+    /// - Parameters:
+    ///   - lhs: A value to compare.
+    ///   - rhs: Another value to compare.
+    public static func == (lhs: ComposableArchitecture2.Trigger<Arguments>, rhs: ComposableArchitecture2.Trigger<Arguments>) -> Bool
+}
+
+extension Trigger : Hashable {
+
+    /// Hashes the essential components of this value by feeding them into the
+    /// given hasher.
+    ///
+    /// Implement this method to conform to the `Hashable` protocol. The
+    /// components used for hashing must be the same as the components compared
+    /// in your type's `==` operator implementation. Call `hasher.combine(_:)`
+    /// with each of these components.
+    ///
+    /// - Important: In your implementation of `hash(into:)`,
+    ///   don't call `finalize()` on the `hasher` instance provided,
+    ///   or replace it with a different instance.
+    ///   Doing so may become a compile-time error in the future.
+    ///
+    /// - Parameter hasher: The hasher to use when combining the components
+    ///   of this instance.
+    public func hash(into hasher: inout Hasher)
+}
+
+/// A feature that handles user actions.
+public struct Update<State, Action> : ComposableArchitecture2.FeatureProtocol {
+
+    /// Creates a feature that handles user actions.
+    ///
+    /// - Parameter update: A closure that can update state or start asynchronous work given a user
+    ///   action.
+    public init(update: @escaping (_ state: inout State, _ action: Action) -> Void)
+
+    public static func _mountFeature(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.Update<State, Action>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+    public static func _routeAction(action: Action, feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2.Update<State, Action>>, inputs: ComposableArchitecture2._FeatureInputs<State, Action>, core: some ComposableArchitecture2._Core<State, Action>)
+
+    public func _isIdentical(to other: ComposableArchitecture2.Update<State, Action>) -> Bool
+}
+
+/// <#Description#>
+///
+/// > Important: Value locations are transparently `Codable` and `Hashable` so that a feature's
+/// > state can still easily synthesize conformances that simply ignore the location. Every location
+/// > is equal to every other location. Do not compare or hash a location directly (or use a
+/// > location as a dictionary key, for example).
+public struct ValueLocation {
+
+    public struct ID : Hashable, Sendable {
+    }
+}
+
+extension ValueLocation : Decodable {
+
+    /// Creates a new instance by decoding from the given decoder.
+    ///
+    /// This initializer throws an error if reading from the decoder fails, or
+    /// if the data read is corrupted or otherwise invalid.
+    ///
+    /// - Parameter decoder: The decoder to read data from.
+    public init(from decoder: any Decoder) throws
+}
+
+extension ValueLocation : Encodable {
+
+    /// Encodes this value into the given encoder.
+    ///
+    /// If the value fails to encode anything, `encoder` will encode an empty
+    /// keyed container in its place.
+    ///
+    /// This function throws an error if any values are invalid for the given
+    /// encoder's format.
+    ///
+    /// - Parameter encoder: The encoder to write data to.
+    public func encode(to encoder: any Encoder) throws
+}
+
+extension ValueLocation : Equatable {
+
+    /// Returns a Boolean value indicating whether two values are equal.
+    ///
+    /// Equality is the inverse of inequality. For any values `a` and `b`,
+    /// `a == b` implies that `a != b` is `false`.
+    ///
+    /// - Parameters:
+    ///   - lhs: A value to compare.
+    ///   - rhs: Another value to compare.
+    public static func == (lhs: ComposableArchitecture2.ValueLocation, rhs: ComposableArchitecture2.ValueLocation) -> Bool
+}
+
+extension ValueLocation : Hashable {
+
+    /// Hashes the essential components of this value by feeding them into the
+    /// given hasher.
+    ///
+    /// Implement this method to conform to the `Hashable` protocol. The
+    /// components used for hashing must be the same as the components compared
+    /// in your type's `==` operator implementation. Call `hasher.combine(_:)`
+    /// with each of these components.
+    ///
+    /// - Important: In your implementation of `hash(into:)`,
+    ///   don't call `finalize()` on the `hasher` instance provided,
+    ///   or replace it with a different instance.
+    ///   Doing so may become a compile-time error in the future.
+    ///
+    /// - Parameter hasher: The hasher to use when combining the components
+    ///   of this instance.
+    public func hash(into hasher: inout Hasher)
+}
+
+extension ValueLocation : Sendable {
+}
+
+extension ValueLocation {
+
+    public init()
+
+    public static let none: ComposableArchitecture2.ValueLocation
+
+    public static func tag(_ tag: Int) -> ComposableArchitecture2.ValueLocation
+}
+
+public protocol ValueObservable {
+
+    var _$valueLocation: ComposableArchitecture2.ValueLocation { get }
+}
+
+extension ValueObservable where Self : Identifiable, Self.ID == ComposableArchitecture2.ValueLocation.ID {
+
+    public var id: ComposableArchitecture2.ValueLocation.ID { get }
+}
+
+/// Adds observation to values held in a feature.
+///
+/// This macro is applied automatically by the ``Feature()`` macro to ``FeatureProtocol/State``.
+@attached(member, names: named(_$valueLocation)) @attached(memberAttribute) @attached(extension, conformances: ComposableArchitecture2.ValueObservable) public macro ValueObservable() = #externalMacro(module: "ComposableArchitecture2Macros", type: "ValueObservableMacro")
+
+/// Disables observation tracking of a property.
+///
+/// By default, any accessible property of a value-observable type can be observed. To prevent
+/// observation, attach the `@ValueObservationIgnored` macro to the property.
+@attached(accessor, names: named(willSet)) public macro ValueObservationIgnored() = #externalMacro(module: "ComposableArchitecture2Macros", type: "ValueObservationIgnoredMacro")
+
+public struct ValueObservationTracked<Value> {
+
+    public var wrappedValue: Value
+
+    public var projectedValue: ComposableArchitecture2.ValueObservationTracked<Value> { get }
+
+    public init(wrappedValue: Value)
+
+    public init(wrappedValue: Value) where Value : ComposableArchitecture2.ValueObservable
+
+    public init(wrappedValue: Value) where Value : ComposableArchitecture2.ValueObservable, Value : Equatable
+
+    public init(wrappedValue: Value) where Value : AnyObject, Value : ComposableArchitecture2.ValueObservable
+
+    public init(wrappedValue: Value) where Value : AnyObject, Value : ComposableArchitecture2.ValueObservable, Value : Equatable
+
+    public init(wrappedValue: Value) where Value : Equatable
+
+    public init(wrappedValue: Value) where Value : AnyObject
+
+    public init(wrappedValue: Value) where Value : AnyObject, Value : Equatable
+
+    public struct Box {
+
+        public var wrappedValue: Value
+
+        public var projectedValue: ComposableArchitecture2.ValueObservationTracked<Value>.Box { get }
+
+        public init(wrappedValue: Value)
+
+        public init(wrappedValue: Value) where Value : ComposableArchitecture2.ValueObservable
+
+        public init(wrappedValue: Value) where Value : ComposableArchitecture2.ValueObservable, Value : Equatable
+
+        public init(wrappedValue: Value) where Value : AnyObject, Value : ComposableArchitecture2.ValueObservable
+
+        public init(wrappedValue: Value) where Value : AnyObject, Value : ComposableArchitecture2.ValueObservable, Value : Equatable
+
+        public init(wrappedValue: Value) where Value : Equatable
+
+        public init(wrappedValue: Value) where Value : AnyObject
+
+        public init(wrappedValue: Value) where Value : AnyObject, Value : Equatable
+    }
+}
+
+extension ValueObservationTracked : Equatable where Value : Equatable {
+
+    /// Returns a Boolean value indicating whether two values are equal.
+    ///
+    /// Equality is the inverse of inequality. For any values `a` and `b`,
+    /// `a == b` implies that `a != b` is `false`.
+    ///
+    /// - Parameters:
+    ///   - lhs: A value to compare.
+    ///   - rhs: Another value to compare.
+    public static func == (lhs: ComposableArchitecture2.ValueObservationTracked<Value>, rhs: ComposableArchitecture2.ValueObservationTracked<Value>) -> Bool
+}
+
+extension ValueObservationTracked : Hashable where Value : Hashable {
+
+    /// Hashes the essential components of this value by feeding them into the
+    /// given hasher.
+    ///
+    /// Implement this method to conform to the `Hashable` protocol. The
+    /// components used for hashing must be the same as the components compared
+    /// in your type's `==` operator implementation. Call `hasher.combine(_:)`
+    /// with each of these components.
+    ///
+    /// - Important: In your implementation of `hash(into:)`,
+    ///   don't call `finalize()` on the `hasher` instance provided,
+    ///   or replace it with a different instance.
+    ///   Doing so may become a compile-time error in the future.
+    ///
+    /// - Parameter hasher: The hasher to use when combining the components
+    ///   of this instance.
+    public func hash(into hasher: inout Hasher)
+}
+
+extension ValueObservationTracked : Decodable where Value : Decodable {
+
+    /// Creates a new instance by decoding from the given decoder.
+    ///
+    /// This initializer throws an error if reading from the decoder fails, or
+    /// if the data read is corrupted or otherwise invalid.
+    ///
+    /// - Parameter decoder: The decoder to read data from.
+    public init(from decoder: any Decoder) throws
+}
+
+extension ValueObservationTracked : Encodable where Value : Encodable {
+
+    /// Encodes this value into the given encoder.
+    ///
+    /// If the value fails to encode anything, `encoder` will encode an empty
+    /// keyed container in its place.
+    ///
+    /// This function throws an error if any values are invalid for the given
+    /// encoder's format.
+    ///
+    /// - Parameter encoder: The encoder to write data to.
+    public func encode(to encoder: any Encoder) throws
+}
+
+extension ValueObservationTracked : Sendable where Value : Sendable {
+}
+
+extension ValueObservationTracked : CustomDebugStringConvertible {
+
+    /// A textual representation of this instance, suitable for debugging.
+    ///
+    /// Calling this property directly is discouraged. Instead, convert an
+    /// instance of any type to a string by using the `String(reflecting:)`
+    /// initializer. This initializer works with any type, and uses the custom
+    /// `debugDescription` property for types that conform to
+    /// `CustomDebugStringConvertible`:
+    ///
+    ///     struct Point: CustomDebugStringConvertible {
+    ///         let x: Int, y: Int
+    ///
+    ///         var debugDescription: String {
+    ///             return "(\(x), \(y))"
+    ///         }
+    ///     }
+    ///
+    ///     let p = Point(x: 21, y: 30)
+    ///     let s = String(reflecting: p)
+    ///     print(s)
+    ///     // Prints "(21, 30)"
+    ///
+    /// The conversion of `p` to a string in the assignment to `s` uses the
+    /// `Point` type's `debugDescription` property.
+    public var debugDescription: String { get }
+}
+
+extension ValueObservationTracked : CustomReflectable {
+
+    /// The custom mirror for this instance.
+    ///
+    /// If this type has value semantics, the mirror should be unaffected by
+    /// subsequent mutations of the instance.
+    public var customMirror: Mirror { get }
+}
+
+extension ValueObservationTracked : CustomStringConvertible {
+
+    /// A textual representation of this instance.
+    ///
+    /// Calling this property directly is discouraged. Instead, convert an
+    /// instance of any type to a string by using the `String(describing:)`
+    /// initializer. This initializer works with any type, and uses the custom
+    /// `description` property for types that conform to
+    /// `CustomStringConvertible`:
+    ///
+    ///     struct Point: CustomStringConvertible {
+    ///         let x: Int, y: Int
+    ///
+    ///         var description: String {
+    ///             return "(\(x), \(y))"
+    ///         }
+    ///     }
+    ///
+    ///     let p = Point(x: 21, y: 30)
+    ///     let s = String(describing: p)
+    ///     print(s)
+    ///     // Prints "(21, 30)"
+    ///
+    /// The conversion of `p` to a string in the assignment to `s` uses the
+    /// `Point` type's `description` property.
+    public var description: String { get }
+}
+
+extension ValueObservationTracked.Box : Equatable where Value : Equatable {
+
+    /// Returns a Boolean value indicating whether two values are equal.
+    ///
+    /// Equality is the inverse of inequality. For any values `a` and `b`,
+    /// `a == b` implies that `a != b` is `false`.
+    ///
+    /// - Parameters:
+    ///   - lhs: A value to compare.
+    ///   - rhs: Another value to compare.
+    public static func == (lhs: ComposableArchitecture2.ValueObservationTracked<Value>.Box, rhs: ComposableArchitecture2.ValueObservationTracked<Value>.Box) -> Bool
+}
+
+extension ValueObservationTracked.Box : Hashable where Value : Hashable {
+
+    /// Hashes the essential components of this value by feeding them into the
+    /// given hasher.
+    ///
+    /// Implement this method to conform to the `Hashable` protocol. The
+    /// components used for hashing must be the same as the components compared
+    /// in your type's `==` operator implementation. Call `hasher.combine(_:)`
+    /// with each of these components.
+    ///
+    /// - Important: In your implementation of `hash(into:)`,
+    ///   don't call `finalize()` on the `hasher` instance provided,
+    ///   or replace it with a different instance.
+    ///   Doing so may become a compile-time error in the future.
+    ///
+    /// - Parameter hasher: The hasher to use when combining the components
+    ///   of this instance.
+    public func hash(into hasher: inout Hasher)
+}
+
+extension ValueObservationTracked.Box : Decodable where Value : Decodable {
+
+    /// Creates a new instance by decoding from the given decoder.
+    ///
+    /// This initializer throws an error if reading from the decoder fails, or
+    /// if the data read is corrupted or otherwise invalid.
+    ///
+    /// - Parameter decoder: The decoder to read data from.
+    public init(from decoder: any Decoder) throws
+}
+
+extension ValueObservationTracked.Box : Encodable where Value : Encodable {
+
+    /// Encodes this value into the given encoder.
+    ///
+    /// If the value fails to encode anything, `encoder` will encode an empty
+    /// keyed container in its place.
+    ///
+    /// This function throws an error if any values are invalid for the given
+    /// encoder's format.
+    ///
+    /// - Parameter encoder: The encoder to write data to.
+    public func encode(to encoder: any Encoder) throws
+}
+
+extension ValueObservationTracked.Box : Sendable where Value : Sendable {
+}
+
+extension ValueObservationTracked.Box : CustomDebugStringConvertible {
+
+    /// A textual representation of this instance, suitable for debugging.
+    ///
+    /// Calling this property directly is discouraged. Instead, convert an
+    /// instance of any type to a string by using the `String(reflecting:)`
+    /// initializer. This initializer works with any type, and uses the custom
+    /// `debugDescription` property for types that conform to
+    /// `CustomDebugStringConvertible`:
+    ///
+    ///     struct Point: CustomDebugStringConvertible {
+    ///         let x: Int, y: Int
+    ///
+    ///         var debugDescription: String {
+    ///             return "(\(x), \(y))"
+    ///         }
+    ///     }
+    ///
+    ///     let p = Point(x: 21, y: 30)
+    ///     let s = String(reflecting: p)
+    ///     print(s)
+    ///     // Prints "(21, 30)"
+    ///
+    /// The conversion of `p` to a string in the assignment to `s` uses the
+    /// `Point` type's `debugDescription` property.
+    public var debugDescription: String { get }
+}
+
+extension ValueObservationTracked.Box : CustomReflectable {
+
+    /// The custom mirror for this instance.
+    ///
+    /// If this type has value semantics, the mirror should be unaffected by
+    /// subsequent mutations of the instance.
+    public var customMirror: Mirror { get }
+}
+
+extension ValueObservationTracked.Box : CustomStringConvertible {
+
+    /// A textual representation of this instance.
+    ///
+    /// Calling this property directly is discouraged. Instead, convert an
+    /// instance of any type to a string by using the `String(describing:)`
+    /// initializer. This initializer works with any type, and uses the custom
+    /// `description` property for types that conform to
+    /// `CustomStringConvertible`:
+    ///
+    ///     struct Point: CustomStringConvertible {
+    ///         let x: Int, y: Int
+    ///
+    ///         var description: String {
+    ///             return "(\(x), \(y))"
+    ///         }
+    ///     }
+    ///
+    ///     let p = Point(x: 21, y: 30)
+    ///     let s = String(describing: p)
+    ///     print(s)
+    ///     // Prints "(21, 30)"
+    ///
+    /// The conversion of `p` to a string in the assignment to `s` uses the
+    /// `Point` type's `description` property.
+    public var description: String { get }
+}
+
+/// Synthesizes a property for accessors.
+@attached(accessor, names: named(init), named(get), named(set)) @attached(peer, names: prefixed(`_`)) public macro ValueObservationTracked() = #externalMacro(module: "ComposableArchitecture2Macros", type: "ValueObservationTrackedMacro")
+
+/// Synthesizes a property for accessors.
+@attached(accessor, names: named(init), named(get), named(set)) @attached(peer, names: prefixed(`_`)) public macro ValueObservationTracked(_ option: ComposableArchitecture2.ValueObservationTrackedOption) = #externalMacro(module: "ComposableArchitecture2Macros", type: "ValueObservationTrackedMacro")
+
+/// A configuration option for the `@ValueObservationTracked` macro.
+///
+/// Pass to ``ValueObservationTracked(_:)`` to configure how observation is tracked.
+public enum ValueObservationTrackedOption {
+
+    /// Store this observed value on the heap.
+    case box
+}
+
+public struct _AddTaskContext {
+}
+
+public struct _Breadcrumbs {
+
+    public var root: String
+
+    public var path: String
+
+    public var displayName: String { get }
+}
+
+final public class _ChangeDebugger<State, Action> : ComposableArchitecture2._ChangeDebugging where State : DebugSnapshots.DebugSnapshotConvertible {
+
+    public var origin: ComposableArchitecture2._ChangeOrigin
+
+    public let breadcrumbs: ComposableArchitecture2._Breadcrumbs
+
+    public var featureName: String { get }
+
+    public func logMount()
+
+    public func logDismount(_ state: Any)
+
+    @discardableResult
+    public func logAction<R>(_ action: Any, breadcrumbs: String, _ body: () -> R) -> R
+
+    @discardableResult
+    public func logModify<R>(breadcrumbs: String, _ body: () -> R) -> R
+
+    @discardableResult
+    public func logChanges<R>(_ message: String, breadcrumbs: String, _ body: () -> R) -> R
+}
+
+final public class _ChangeDebuggerConfig : @unchecked Sendable {
+
+    public func install<State, Action>(core: some ComposableArchitecture2._Core)
+}
+
+public enum _ChangeDebuggerContext {
+
+    public static let $config: TaskLocal<ComposableArchitecture2._ChangeDebuggerConfig?>
+
+    public static var config: ComposableArchitecture2._ChangeDebuggerConfig? { get }
+}
+
+public protocol _ChangeDebugging : AnyObject {
+
+    var origin: ComposableArchitecture2._ChangeOrigin { get set }
+
+    func logMount()
+
+    func logDismount(_ state: Any)
+
+    @discardableResult
+    func logChanges<R>(_ message: String, breadcrumbs: String, _ body: () -> R) -> R
+
+    @discardableResult
+    func logModify<R>(breadcrumbs: String, _ body: () -> R) -> R
+
+    @discardableResult
+    func logAction<R>(_ action: Any, breadcrumbs: String, _ body: () -> R) -> R
+}
+
+public enum _ChangeOrigin {
+
+    case store
+
+    case task
+}
+
+public protocol _Core<State, Action> : AnyObject, SendableMetatype {
+
+    associatedtype State
+
+    associatedtype Action
+
+    var state: Self.State { get set }
+
+    func modify(_ body: (inout Self.State) -> Void) -> Task<Void, Never>?
+
+    func post<K>(key: K.Type, value: K.Value, sourcePath: ComposableArchitecture2._GraphPath?) -> Task<Void, Never>? where K : ComposableArchitecture2.FeatureEventKey
+
+    func send(_ action: Self.Action, fileID: StaticString, filePath: StaticString, line: UInt, column: UInt) -> Task<Void, Never>?
+
+    var isPresented: Bool { get }
+
+    func dismiss() throws -> Task<Void, Never>?
+
+    var canRemount: Bool { get }
+
+    var children: [ComposableArchitecture2._ScopeID<Self.State, Self.Action> : any ComposableArchitecture2._Core] { get set }
+
+    var context: ComposableArchitecture2._CoreContext { get }
+
+    var dependencies: Dependencies.DependencyValues { get set }
+
+    var eventHandlers: ComposableArchitecture2._EventHandlers { get }
+
+    var isDismounted: Bool { get }
+
+    var parent: (any ComposableArchitecture2._Core)? { get }
+
+    var spawnedCores: [AnyKeyPath : ComposableArchitecture2._SpawnedCoreEntry] { get set }
+
+    var spawnedCollections: [AnyKeyPath : AnyObject] { get set }
+
+    var storage: [ComposableArchitecture2._GraphPath : any ComposableArchitecture2._Storage] { get set }
+
+    func invalidate()
+
+    func runDismountHooks() -> [ComposableArchitecture2._TrackedTask]
+
+    func runHooksRecursively() -> [ComposableArchitecture2._TrackedTask]
+
+    func withState<R>(_ body: (inout Self.State) -> R) -> R where R : ~Copyable
+
+    var _breadcrumbs: ComposableArchitecture2._Breadcrumbs { get set }
+
+    var _changeDebugger: (any ComposableArchitecture2._ChangeDebugging)? { get set }
+
+    var _nearestDebugger: (any ComposableArchitecture2._ChangeDebugging)? { get }
+}
+
+final public class _CoreContext {
+}
+
+final public class _EventHandler : Hashable, Sendable {
+
+    /// Returns a Boolean value indicating whether two values are equal.
+    ///
+    /// Equality is the inverse of inequality. For any values `a` and `b`,
+    /// `a == b` implies that `a != b` is `false`.
+    ///
+    /// - Parameters:
+    ///   - lhs: A value to compare.
+    ///   - rhs: Another value to compare.
+    public static func == (lhs: ComposableArchitecture2._EventHandler, rhs: ComposableArchitecture2._EventHandler) -> Bool
+
+    /// Hashes the essential components of this value by feeding them into the
+    /// given hasher.
+    ///
+    /// Implement this method to conform to the `Hashable` protocol. The
+    /// components used for hashing must be the same as the components compared
+    /// in your type's `==` operator implementation. Call `hasher.combine(_:)`
+    /// with each of these components.
+    ///
+    /// - Important: In your implementation of `hash(into:)`,
+    ///   don't call `finalize()` on the `hasher` instance provided,
+    ///   or replace it with a different instance.
+    ///   Doing so may become a compile-time error in the future.
+    ///
+    /// - Parameter hasher: The hasher to use when combining the components
+    ///   of this instance.
+    public func hash(into hasher: inout Hasher)
+}
+
+final public class _EventHandlers {
+}
+
+public struct _FeatureInputs<State, Action> {
+
+    public var dependencies: Dependencies.DependencyValues
+
+    public init(dependencies: Dependencies.DependencyValues = DependencyValues._current)
+}
+
+public struct _FeatureModifier_Content<Modifier> : ComposableArchitecture2.FeatureProtocol where Modifier : ComposableArchitecture2.FeatureModifier {
+
+    public static func _mountFeature(feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2._FeatureModifier_Content<Modifier>>, inputs: ComposableArchitecture2._FeatureInputs<Modifier.State, Modifier.Action>, core: some ComposableArchitecture2._Core<Modifier.State, Modifier.Action>)
+
+    public static func _routeAction(action: Modifier.Action, feature: ComposableArchitecture2._GraphValue<ComposableArchitecture2._FeatureModifier_Content<Modifier>>, inputs: ComposableArchitecture2._FeatureInputs<Modifier.State, Modifier.Action>, core: some ComposableArchitecture2._Core<Modifier.State, Modifier.Action>)
+
+    public func _isIdentical(to other: ComposableArchitecture2._FeatureModifier_Content<Modifier>) -> Bool
+}
+
+@attached(member, names: named(Feature)) @attached(extension, conformances: ComposableArchitecture2.FeatureState) public macro _FeatureState() = #externalMacro(module: "ComposableArchitecture2Macros", type: "_FeatureStateMacro")
+
+public struct _GraphPath : Hashable {
+
+    /// Hashes the essential components of this value by feeding them into the
+    /// given hasher.
+    ///
+    /// Implement this method to conform to the `Hashable` protocol. The
+    /// components used for hashing must be the same as the components compared
+    /// in your type's `==` operator implementation. Call `hasher.combine(_:)`
+    /// with each of these components.
+    ///
+    /// - Important: In your implementation of `hash(into:)`,
+    ///   don't call `finalize()` on the `hasher` instance provided,
+    ///   or replace it with a different instance.
+    ///   Doing so may become a compile-time error in the future.
+    ///
+    /// - Parameter hasher: The hasher to use when combining the components
+    ///   of this instance.
+    public func hash(into hasher: inout Hasher)
+}
+
+public struct _GraphValue<Value> : Equatable {
+
+    public subscript<U>(keyPath: KeyPath<Value, U>) -> ComposableArchitecture2._GraphValue<U> { get }
+
+    public subscript<U>(id id: some Hashable) -> ComposableArchitecture2._GraphValue<U> { get }
+}
+
+public enum _InstallLocation : Equatable {
+
+    case ifCaseLet(String?)
+
+    case ifCaseLetSpawn(String?)
+
+    case ifLet(AnyKeyPath)
+
+    case ifLetSpawn(AnyKeyPath)
+}
+
+final public class _PreferenceValues {
+}
+
+extension _PreferenceValues : nonisolated Observable {
+}
+
+public struct _QueuedTask {
+}
+
+public struct _ScopeID<State, Action> : Hashable {
+}
+
+public struct _SpawnedCoreEntry {
+}
+
+public struct _State<FeatureValue> : Codable, Hashable, Sendable {
+
+    public init()
+
+    public private(set) var _$valueLocation: ComposableArchitecture2.ValueLocation { get }
+
+    /// A type representing a "snapshot" of this type.
+    public struct DebugSnapshot : Sendable {
+    }
+
+    public static func _debugSnapshot(_ value: ComposableArchitecture2._State<FeatureValue>, visitor: inout DebugSnapshots._DebugSnapshotVisitor) -> ComposableArchitecture2._State<FeatureValue>.DebugSnapshot
+}
+
+extension _State : ComposableArchitecture2.FeatureState {
+
+    /// A type representing the feature associated with this state.
+    public typealias Feature = FeatureValue
+}
+
+extension _State : ComposableArchitecture2.ValueObservable {
+}
+
+extension _State : DebugSnapshots.DebugSnapshotConvertible {
+}
+
+extension _State.DebugSnapshot : Codable, Hashable {
+}
+
+public protocol _Storage : AnyObject {
+
+    var tasks: [AnyHashable : [Task<Void, Never>]] { get }
+
+    func dismount() -> ComposableArchitecture2._QueuedTask?
+
+    func invalidateGeneration()
+
+    func trackTask(_ task: Task<Void, Never>, at id: AnyHashable)
+
+    func replaceTasks(_ tasks: [Task<Void, Never>], at id: AnyHashable)
+
+    func cancelTasks(at id: AnyHashable)
+
+    var _installLocation: ComposableArchitecture2._InstallLocation? { get }
+}
+
+public struct _TrackedTask : Sendable {
+}
+
+nonisolated(nonsending) public func withStoreTaskCancellation(id: ComposableArchitecture2.StoreTaskID, body: nonisolated(nonsending) @escaping () async throws -> Void) async
+
+extension Optional : ComposableArchitecture2.FeatureProtocol where Wrapped : ComposableArchitecture2.FeatureProtocol {
+
+    public static func _mountFeature(feature: ComposableArchitecture2._GraphValue<Wrapped?>, inputs: ComposableArchitecture2._FeatureInputs<Wrapped.State, Wrapped.Action>, core: some ComposableArchitecture2._Core<Wrapped.State, Wrapped.Action>)
+
+    public static func _routeAction(action: Wrapped.Action, feature: ComposableArchitecture2._GraphValue<Wrapped?>, inputs: ComposableArchitecture2._FeatureInputs<Wrapped.State, Wrapped.Action>, core: some ComposableArchitecture2._Core<Wrapped.State, Wrapped.Action>)
+
+    public func _isIdentical(to other: Wrapped?) -> Bool
+}
+
+extension Dependency {
+
+    public mutating func _mountProperty<F>(in core: some ComposableArchitecture2._Core, container feature: ComposableArchitecture2._GraphValue<F>, fieldName: String?) where F : ComposableArchitecture2.FeatureProtocol
+}
+
+@MainActor extension Bindable {
+
+    /// Returns a binding to a property of state.
+    @MainActor public subscript<State, Action, S>(dynamicMember keyPath: WritableKeyPath<State, S>) -> Binding<S> where Value == ComposableArchitecture2.Store<State, Action> { get }
+
+    /// Scopes a bindable store to a binding of an optional child feature.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to optional child state.
+    ///   - actionKeyPath: A case key path to child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A binding to an optional child store.
+    @MainActor public func scope<State, Action, S, A>(_ stateKeyPath: WritableKeyPath<State, S?>, action actionKeyPath: CasePaths.CaseKeyPath<Action, A>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Binding<ComposableArchitecture2.Store<S, A>?> where Value == ComposableArchitecture2.Store<State, Action>
+
+    /// Scopes a bindable store to a binding of an optional enumeration of child features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to an optional enumeration of child state.
+    ///   - actionKeyPath: A case key path to an enumeration of child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A binding to an optional store enumeration.
+    @MainActor public func scope<State, Action, S>(_ stateKeyPath: WritableKeyPath<State, S?>, action actionKeyPath: CasePaths.CaseKeyPath<Action, S.Feature.Action>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Binding<S.Feature.StoreEnumeration?> where Value == ComposableArchitecture2.Store<State, Action>, S : ComposableArchitecture2.FeatureState, S == S.Feature.State, S.Feature : ComposableArchitecture2.StaticFeature
+
+    /// Scopes a bindable store to a binding of a collection of child features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a collection of child states.
+    ///   - actionKeyPath: A case key path to identified child actions.
+    ///   - idKeyPath: A key path to child identity.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A binding to a collection of child stores.
+    @MainActor public func scope<State, Action, C, A, ID>(_ stateKeyPath: WritableKeyPath<State, C>, action actionKeyPath: CasePaths.CaseKeyPath<Action, (ID, A)>, id idKeyPath: KeyPath<C.Element, ID>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Binding<[ComposableArchitecture2.Store<C.Element, A>]> where Value == ComposableArchitecture2.Store<State, Action>, C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection, ID : Hashable
+
+    /// Scopes a bindable store to a binding of a collection of child features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a collection of child states.
+    ///   - actionKeyPath: A case key path to identified child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A binding to a collection of child stores.
+    @MainActor public func scope<State, Action, C, A>(_ stateKeyPath: WritableKeyPath<State, C>, action actionKeyPath: CasePaths.CaseKeyPath<Action, (C.Element.ID, A)>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Binding<[ComposableArchitecture2.Store<C.Element, A>]> where Value == ComposableArchitecture2.Store<State, Action>, C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection, C.Element : Identifiable
+
+    /// Scopes a bindable store to a binding of a collection of child enumerated features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a collection of child enumerated states.
+    ///   - actionKeyPath: A case key path to identified child actions.
+    ///   - idKeyPath: A key path to child identity.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A binding to a collection of child stores.
+    @MainActor public func scope<State, Action, C, ID>(_ stateKeyPath: WritableKeyPath<State, C>, action actionKeyPath: CasePaths.CaseKeyPath<Action, (ID, C.Element.Feature.Action)>, id idKeyPath: KeyPath<C.Element, ID>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Binding<[C.Element.Feature.StoreEnumeration]> where Value == ComposableArchitecture2.Store<State, Action>, C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection, ID : Hashable, C.Element : ComposableArchitecture2.FeatureState, C.Element == C.Element.Feature.State, C.Element.Feature : ComposableArchitecture2.StaticFeature
+
+    /// Scopes a bindable store to a binding of a collection of child enumerated features.
+    ///
+    /// - Parameters:
+    ///   - stateKeyPath: A key path to a collection of child enumerated states.
+    ///   - actionKeyPath: A case key path to identified child actions.
+    ///   - fileID: The source `#fileID` associated with the scope.
+    ///   - filePath: The source `#filePath` associated with the scope.
+    ///   - line: The source `#line` associated with the scope.
+    ///   - column: The source `#column` associated with the scope.
+    /// - Returns: A binding to a collection of child stores.
+    @MainActor public func scope<State, Action, C>(_ stateKeyPath: WritableKeyPath<State, C>, action actionKeyPath: CasePaths.CaseKeyPath<Action, (C.Element.ID, C.Element.Feature.Action)>, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) -> Binding<[C.Element.Feature.StoreEnumeration]> where Value == ComposableArchitecture2.Store<State, Action>, C : MutableCollection, C : RandomAccessCollection, C : RangeReplaceableCollection, C.Element : ComposableArchitecture2.FeatureState, C.Element : Identifiable, C.Element == C.Element.Feature.State, C.Element.Feature : ComposableArchitecture2.StaticFeature
+}
+
+extension Binding {
+
+    /// Returns a binding to a property of state.
+    @MainActor public subscript<State, Action, S>(dynamicMember keyPath: WritableKeyPath<State, S>) -> Binding<S> where Value == ComposableArchitecture2.Store<State, Action> { get }
+
+    /// Returns a binding to a case of state.
+    public subscript<Base, Case>(dynamicMember keyPath: CasePaths.CaseKeyPath<Base, Case>) -> Binding<Case?> where Value == Base?, Base : ComposableArchitecture2.StoreEnumerationProtocol { get }
+
+    /// Returns a binding to a case of state.
+    @MainActor public subscript<Base, State, Action>(dynamicMember keyPath: CasePaths.CaseKeyPath<Base, ComposableArchitecture2.Store<State, Action>>) -> Binding<State.Feature.StoreEnumeration?> where Value == Base?, Base : ComposableArchitecture2.StoreEnumerationProtocol, State : ComposableArchitecture2.FeatureState, State == State.Feature.State, Action == State.Feature.Action, State.Feature : ComposableArchitecture2.StaticFeature { get }
+}
+
+extension DependencyValues {
+
+    public var exhaustivity: ComposableArchitecture2.TestExhaustivity
+}
+
+extension Optional : ComposableArchitecture2.ValueObservable where Wrapped : ComposableArchitecture2.ValueObservable {
+
+    public var _$valueLocation: ComposableArchitecture2.ValueLocation { get }
+}
+

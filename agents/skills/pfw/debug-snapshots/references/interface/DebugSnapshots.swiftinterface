@@ -1,0 +1,282 @@
+import CustomDump
+import IssueReporting
+
+/// Defines a debug snapshot for a given type.
+///
+/// When applied to a type, a conformance for ``DebugSnapshotConvertible`` is generated, along with
+/// associated snapshot types. Structs and enums get a nested `DebugSnapshot` value type, while
+/// classes get a nested `DebugSnapshot` reference wrapper backed by `DebugSnapshotValue`.
+/// Instances of these types can be returned from the ``snapshot(_:)`` function when it is handed
+/// a ``DebugSnapshotConvertible`` type.
+@attached(extension, conformances: DebugSnapshots.DebugSnapshotConvertible) @attached(member, names: named(DebugSnapshotValue), named(DebugSnapshot), named(_debugSnapshot)) @attached(memberAttribute) public macro DebugSnapshot() = #externalMacro(module: "DebugSnapshotsMacros", type: "DebugSnapshotMacro")
+
+/// A type with a debug snapshot representation.
+///
+/// This conformance is automatically applied to a type using the ``DebugSnapshot()`` macro.
+public protocol DebugSnapshotConvertible<DebugSnapshot> {
+
+    /// A type representing a "snapshot" of this type.
+    associatedtype DebugSnapshot
+
+    static func _debugSnapshot(_ value: Self, visitor: inout DebugSnapshots._DebugSnapshotVisitor) -> Self.DebugSnapshot
+}
+
+/// Tells `@DebugSnapshot` to snapshot a property.
+///
+/// If a property itself is a ``DebugSnapshotConvertible`` type (including optionals and arrays),
+/// apply `@DebugSnapshotConvertible` to snapshot it in the corresponding property of the debug
+/// snapshot.
+///
+/// ```swift
+/// @DebugSnapshot
+/// @MainActor
+/// @Observable
+/// final class ParentModel {
+///   @DebugSnapshotConvertible
+///   var child: ChildModel?
+/// }
+/// ```
+@attached(peer) public macro DebugSnapshotConvertible() = #externalMacro(module: "DebugSnapshotsMacros", type: "DebugSnapshotConvertibleMacro")
+
+/// Tells `@DebugSnapshot` to ignore a property.
+@attached(peer) public macro DebugSnapshotIgnored() = #externalMacro(module: "DebugSnapshotsMacros", type: "DebugSnapshotIgnoredMacro")
+
+/// Tells `@DebugSnapshot` to track a property.
+///
+/// By default, ``DebugSnapshot()`` ignores properties with more private access control than the
+/// type itself, underscored properties, as well as computed properties. To override this behavior,
+/// apply `@DebugSnapshotTracked`, instead.
+@attached(peer) public macro DebugSnapshotTracked() = #externalMacro(module: "DebugSnapshotsMacros", type: "DebugSnapshotTrackedMacro")
+
+public struct _DebugSnapshotDump : CustomDump.CustomDumpReflectable {
+
+    public init(_ snapshot: some CustomDump.CustomDumpReflectable)
+
+    /// The custom dump mirror for this instance.
+    public var customDumpMirror: Mirror { get }
+}
+
+public protocol _DebugSnapshotObject<Snapshot> : AnyObject, CustomDump.CustomDumpReflectable, CustomDump._CustomDiffObject {
+
+    associatedtype Snapshot
+
+    var _snapshot: Self.Snapshot { get set }
+
+    var _originIdentifier: ObjectIdentifier? { get set }
+
+    var _diffSnapshot: (any DebugSnapshots._DebugSnapshotObject)? { get set }
+}
+
+extension _DebugSnapshotObject {
+
+    public var _customDiffValues: (Any, Any) { get }
+
+    public var _customDiffType: (any Any.Type)? { get }
+
+    public var _objectIdentifier: ObjectIdentifier { get }
+
+    /// The custom dump mirror for this instance.
+    public var customDumpMirror: Mirror { get }
+}
+
+public struct _DebugSnapshotVisitor : @unchecked Sendable {
+
+    public init()
+
+    public func lookup<Snapshot>(_ object: some AnyObject) -> Snapshot? where Snapshot : AnyObject
+
+    public mutating func register(_ object: some AnyObject, snapshot: some AnyObject)
+}
+
+@propertyWrapper public struct _Indirect<Value> {
+
+    public var wrappedValue: Value
+
+    public init(wrappedValue: Value)
+}
+
+extension _Indirect : Decodable where Value : Decodable {
+
+    /// Creates a new instance by decoding from the given decoder.
+    ///
+    /// This initializer throws an error if reading from the decoder fails, or
+    /// if the data read is corrupted or otherwise invalid.
+    ///
+    /// - Parameter decoder: The decoder to read data from.
+    public init(from decoder: any Decoder) throws
+}
+
+extension _Indirect : Encodable where Value : Encodable {
+
+    /// Encodes this value into the given encoder.
+    ///
+    /// If the value fails to encode anything, `encoder` will encode an empty
+    /// keyed container in its place.
+    ///
+    /// This function throws an error if any values are invalid for the given
+    /// encoder's format.
+    ///
+    /// - Parameter encoder: The encoder to write data to.
+    public func encode(to encoder: any Encoder) throws
+}
+
+extension _Indirect : Equatable where Value : Equatable {
+
+    /// Returns a Boolean value indicating whether two values are equal.
+    ///
+    /// Equality is the inverse of inequality. For any values `a` and `b`,
+    /// `a == b` implies that `a != b` is `false`.
+    ///
+    /// - Parameters:
+    ///   - lhs: A value to compare.
+    ///   - rhs: Another value to compare.
+    public static func == (lhs: DebugSnapshots._Indirect<Value>, rhs: DebugSnapshots._Indirect<Value>) -> Bool
+}
+
+extension _Indirect : Hashable where Value : Hashable {
+
+    /// Hashes the essential components of this value by feeding them into the
+    /// given hasher.
+    ///
+    /// Implement this method to conform to the `Hashable` protocol. The
+    /// components used for hashing must be the same as the components compared
+    /// in your type's `==` operator implementation. Call `hasher.combine(_:)`
+    /// with each of these components.
+    ///
+    /// - Important: In your implementation of `hash(into:)`,
+    ///   don't call `finalize()` on the `hasher` instance provided,
+    ///   or replace it with a different instance.
+    ///   Doing so may become a compile-time error in the future.
+    ///
+    /// - Parameter hasher: The hasher to use when combining the components
+    ///   of this instance.
+    public func hash(into hasher: inout Hasher)
+}
+
+extension _Indirect : Identifiable where Value : Identifiable {
+
+    /// The stable identity of the entity associated with this instance.
+    public var id: Value.ID { get }
+}
+
+extension _Indirect : Sendable where Value : Sendable {
+}
+
+extension _Indirect : CustomReflectable {
+
+    /// The custom mirror for this instance.
+    ///
+    /// If this type has value semantics, the mirror should be unaffected by
+    /// subsequent mutations of the instance.
+    public var customMirror: Mirror { get }
+}
+
+public func _debugSnapshot<T>(_ value: T, visitor: inout DebugSnapshots._DebugSnapshotVisitor) -> T.DebugSnapshot where T : DebugSnapshots.DebugSnapshotConvertible
+
+public func _diff<Value>(_ previous: Value, _ current: Value, format: CustomDump.DiffFormat = .default) -> String?
+
+/// Prints how an instance of a snapshottable type changes over the course of an operation.
+///
+/// ```swift
+/// try await diff(model) {
+///   try await model.login()
+/// }
+/// // Difference: ...
+/// //
+/// //     AppModel(
+/// //   -   loggedInUser: nil
+/// //   +   loggedInUser: User(
+/// //   +     name: "Blob"
+/// //   +   )
+/// //     )
+/// //
+/// // (Before: -, After: +)
+/// ```
+///
+/// - Parameters:
+///   - instance: An instance of a snapshottable type.
+///   - operation: An operation that causes `instance` to change.
+/// - Returns: The result of the operation.
+public func diff<Value, Result, Failure>(_ instance: @autoclosure () -> some DebugSnapshots.DebugSnapshotConvertible, operation: () throws(Failure) -> Result) throws(Failure) -> Result where Failure : Error
+
+/// Prints how an instance of a snapshottable type changes over the course of an operation.
+///
+/// ```swift
+/// try await diff(model) {
+///   try await model.login()
+/// }
+/// // Difference: ...
+/// //
+/// //     AppModel(
+/// //   -   loggedInUser: nil
+/// //   +   loggedInUser: User(
+/// //   +     name: "Blob"
+/// //   +   )
+/// //     )
+/// //
+/// // (Before: -, After: +)
+/// ```
+///
+/// - Parameters:
+///   - instance: An instance of a snapshottable type.
+///   - operation: An asynchronous operation that causes `instance` to change.
+/// - Returns: The result of the operation.
+public func diff<Value, Result, Failure>(_ instance: @autoclosure () -> some DebugSnapshots.DebugSnapshotConvertible, operation: nonisolated(nonsending) () async throws(Failure) -> Result) async throws(Failure) -> Result where Failure : Error
+
+/// Expects an instance of a snapshottable type has a given set of changes.
+///
+/// - Parameters:
+///   - instance: An instance of a snapshottable type.
+///   - message: An optional description of a failure.
+///   - operation: An optional operation that causes `instance` to change. When provided, you must
+///     "exhaustively" describe how its snapshot changes. When omitted, you can write a
+///     "non-exhaustive" assertion by describing just the fields you want to assert against in the
+///     `changes` closure.
+///   - updateExpectingResult: A closure that asserts how a snapshot of the model changes by
+///     supplying a mutable version of the initial value. This value must be modified to match the
+///     final value.
+///   - fileID: The file where the expectation occurs.
+///   - filePath: The file where the expectation occurs.
+///   - line: The line number where the expectation occurs.
+///   - column: The column where the expectation occurs.
+public func expect<Value>(_ instance: @autoclosure () -> some DebugSnapshots.DebugSnapshotConvertible, _ message: @autoclosure () -> String? = nil, operation: (() throws -> Void)? = nil, changes updateExpectingResult: (inout Value) throws -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) rethrows
+
+/// Expects an instance of a snapshottable type has a given set of changes.
+///
+/// - Parameters:
+///   - instance: An instance of a snapshottable type.
+///   - message: An optional description of a failure.
+///   - operation: An asynchronous operation that causes `instance` to change. You must
+///     "exhaustively" describe how its snapshot changes in `updateExpectingResult`.
+///   - updateExpectingResult: A closure that asserts how a snapshot of the model changes by
+///     supplying a mutable version of the initial value. This value must be modified to match the
+///     final value.
+///   - fileID: The file where the expectation occurs.
+///   - filePath: The file where the expectation occurs.
+///   - line: The line number where the expectation occurs.
+///   - column: The column where the expectation occurs.
+public func expect<Value>(_ instance: @autoclosure () -> some DebugSnapshots.DebugSnapshotConvertible, _ message: @autoclosure () -> String? = nil, operation: nonisolated(nonsending) () async throws -> Void, changes updateExpectingResult: (inout Value) throws -> Void, fileID: StaticString = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) async rethrows
+
+public func isReflectivelyEqual<Value>(_ lhs: Value, _ rhs: Value, fileID: StaticString, filePath: StaticString, line: UInt, column: UInt) -> Bool
+
+/// Takes a snapshot of an instance of a snapshottable type.
+///
+/// - Parameter instance: An instance of a snapshottable type.
+/// - Returns: A snapshot.
+public func snap<T>(_ model: T) -> T.DebugSnapshot where T : DebugSnapshots.DebugSnapshotConvertible
+
+extension Array : DebugSnapshots.DebugSnapshotConvertible where Element : DebugSnapshots.DebugSnapshotConvertible {
+
+    public static func _debugSnapshot(_ value: [Element], visitor: inout DebugSnapshots._DebugSnapshotVisitor) -> [Element.DebugSnapshot]
+}
+
+extension Dictionary where Value : DebugSnapshots.DebugSnapshotConvertible {
+
+    public static func _debugSnapshot(_ value: [Key : Value], visitor: inout DebugSnapshots._DebugSnapshotVisitor) -> [Key : Value.DebugSnapshot]
+}
+
+extension Optional : DebugSnapshots.DebugSnapshotConvertible where Wrapped : DebugSnapshots.DebugSnapshotConvertible {
+
+    public static func _debugSnapshot(_ value: Wrapped?, visitor: inout DebugSnapshots._DebugSnapshotVisitor) -> Wrapped.DebugSnapshot?
+}
+

@@ -7,6 +7,7 @@
 
 SKILLS_DIR="$(cd "$(dirname "$0")/skills" && pwd)"
 XCODE_SKILLS_DIR="$SKILLS_DIR/xcode-skills"
+PFW_SKILLS_DIR="$SKILLS_DIR/pfw"
 
 TARGETS=(
   "$HOME/.claude/skills"
@@ -38,3 +39,4 @@ link_skills_in() {
 
 link_skills_in "$SKILLS_DIR"
 link_skills_in "$XCODE_SKILLS_DIR"
+link_skills_in "$PFW_SKILLS_DIR"
