@@ -1,166 +1,138 @@
 ---
 name: effective-composable-architecture
-description: The Composable Architecture (TCA) を効果的に使うための設計・レビューガイド。特に ViewAction と Action Boundaries（view/internal/delegate）で Action の責務境界を明確化し、Reducer の可読性・テスタビリティ・親子連携を改善するときに使う。TCA feature の新規実装、既存 feature のリファクタ、コードレビュー、Action 設計の統一、Effect/Dependency/Navigation/Binding パターンの見直し時に利用する。
+description: The Composable Architecture（TCA）のFeatureを設計、実装、レビュー、リファクタリングするときに使う。Action Boundaries（view、internal、delegate、binding、子Action）、ViewAction、親から子Actionを送らないロジック共有、EffectとDependency、Destination、AlertState、Sheet、NavigationStack、画面を閉じた後も処理を継続するChild Featureのライフサイクル設計を扱う。
 ---
 
 # Effective Composable Architecture
 
-## Overview
-TCA feature を「Action 境界が明確で、UI から送れるイベントが制御され、テストしやすい構造」に揃える。
+## 目的
 
-この skill は特に `ViewAction` の導入・運用を中心に扱う。Action 設計の背景は `references/action-boundaries.md` を参照する。
+Featureの入力境界、状態の所有権、Effectの寿命をコードから説明できる設計にする。特定のアプリ固有の名前や前提を例へ持ち込まない。
 
-## Workflow
-1. 対象 feature の `Action` を、`view` / `internal` / `delegate` / `destination` / `binding` のどれに属するか分類する。
-2. View 起点のイベントだけを `Action.View` に寄せ、`Action` を `ViewAction` 準拠にする。
-3. View 側に `@ViewAction(for:)` を適用し、`store.send` ではなく `send(...)` を使う。
-4. Effect 応答は `internal` に集約し、親への通知は `delegate` に限定する。
-5. Navigation (`destination`/`path`) と binding (`binding`) を Action 境界から分離し、Reducer の switch を読みやすく保つ。
-6. TestStore で `view -> internal/delegate` の流れを検証する。
+## 成果条件
 
-## ViewAction With Action Boundaries
+- View、Effect、子Feature、親Featureから届くActionを分類できる。
+- 親が具体的な子Actionを命令として送らず、共有ロジックをChild Stateへ抽出できる。
+- 画面の表示期間とChild Featureの寿命が一致するかを判断できる。
+- 対象プロジェクトが固定するTCAのAPIで実装できる。
+- 境界とライフサイクルをTestStoreで検証できる。
+- 変更理由と一次ソースを報告できる。
 
-### 1) Action を API として扱う
-- `Action` は「その feature が外部に公開する操作面」。
-- View から送れる Action を制限しないと、UI が内部イベントを直接送れてしまう。
-- `ViewAction` + `@ViewAction` で「View が送ってよい Action」を型で制限する。
+## 一次ソースの確認
 
-### 2) 推奨 Action 構造
-```swift
-public enum Action: ViewAction, BindableAction {
-    case view(View)
-    case `internal`(Internal)
-    case delegate(Delegate)
-    case destination(PresentationAction<Destination.Action>)
-    case binding(BindingAction<State>)
+`pfw-composable-architecture`スキルを使用できる場合、まずはそのスキルを参照する。この`effective-composable-architecture`スキルは、TCAをさらに使いこなすための応用編にあたる。  
+記憶だけでTCAのAPIを決めない。実装前に次を行う。
 
-    @CasePathable
-    public enum View {
-        case onAppear
-        case onTappedSaveButton
-    }
+1. 対象の`Package.resolved`、`Package.swift`、XcodeプロジェクトからTCAとSwift Navigationのバージョンまたはリビジョンを特定する。
+2. `ghq list --full-path`で`pointfreeco/swift-composable-architecture`と`pointfreeco/swift-navigation`を探す。
+3. 固定リビジョンのソース、テスト、Migration Guideを読む。最新の`main`は移行先の確認に使い、固定リビジョンの挙動より優先しない。
+4. リポジトリまたは必要なリビジョンがローカルに存在しない場合は、推測せず取得をユーザーへ依頼する。
 
-    @CasePathable
-    public enum Internal {
-        case saveResponse(Result<Void, Error>)
-    }
+主に確認するファイルは次のとおり。
 
-    @CasePathable
-    public enum Delegate {
-        case didSave
-    }
-}
-```
+- `Sources/ComposableArchitecture/Observation/ViewAction.swift`
+- `Sources/ComposableArchitecture/Reducer.swift`
+- `Sources/ComposableArchitecture/Reducer/Reducers/PresentationReducer.swift`
+- `Sources/ComposableArchitecture/Documentation.docc/Articles/MigrationGuides/`
+- `Tests/ComposableArchitectureMacrosTests/ReducerMacroTests.swift`
+- Swift Navigationの`Sources/SwiftNavigation/Binding.swift`
 
-`@Reducer`マクロが、トップレベルの`Action`に自動で`@CasePathable`マクロを付与する。
-一方で、ネストしているenumには`@CasePathable`マクロを明示的に付与する必要がある。
-Actionの各enumに`@CasePathable`マクロを付与することで、テストにてネストしたenumのcaseをKeyPathと同じように記述できる。
+## 作業手順
 
-### 3) 境界のルール
-- `View`: ユーザー操作、View ライフサイクル（`task`, `onAppear`, ボタン tap など）。
-- `Internal`: 非同期処理の結果、タイマー tick、通知受信など「UI 起点でないイベント」。
-- `Delegate`: 親 feature に伝えるイベント。子 feature の `View` を親が直接扱う設計を避ける。
-- `Destination/Path`: 画面遷移の状態変化。
-- `Binding`: フォーム入力などの双方向バインディング。
+1. Featureごとに状態の所有者と必要な寿命を決める。
+2. Actionを発生元と通知先で分類する。
+3. 親から子の処理を起動する要件があれば、具体的な子Actionではなく共有可能なChild Stateのメソッドへ抽出する。
+4. 表示を閉じたときにChild Effectをキャンセルするか継続するかを決める。
+5. Reducer、View、親子のScopeを実装する。
+6. Actionの流れとEffectの寿命をテストする。
+7. 対象リポジトリの指示に従ってビルドまたはテストする。
 
-### 4) View 側の実装ルール
-- `@ViewAction(for: Feature.self)` を付与する。
-- View では `send(.someViewAction)` を使う。
-- `store.send` の使用は禁止。
-- Reducer が `Action.View` を受け、必要に応じて `internal` / `delegate` に変換する。
-- `BindableAction` を使う状態は、`Binding(get:set:)` を手書きする前に `$store`（例: `$store.name`, `$store.scope(...)`）で接続する。
-- `Binding(get:set:)` は TCA の状態導出で表現できない UI 連携がある場合に限定し、通常のフォーム入力では使わない。
+曖昧な場合は、次の2点を先に確認する。
 
-## Destination Pattern (汎用)
+- そのイベントを発生させる主体は誰か。
+- 画面が消えた後も、状態または処理を残す必要があるか。
 
-どのアプリでも「表示トリガーは `view`、sheetやfullScreenCoverなどの子画面の結果受信は `destination(.presented(...))`」に統一すると、責務境界が崩れにくい。
+## Action Boundaries
 
-### 1) 親 feature の基本形
-```swift
-@Reducer
-public struct ParentFeature {
-    @Reducer
-    public enum Destination {
-        case childSheet(ChildFeature)
-    }
+Actionは次の順序で分類する。
 
-    @ObservableState
-    public struct State {
-        @Presents var destination: Destination.State?
-    }
+- `binding`: `BindableAction`による双方向入力。
+- `view`: タップ、送信、Viewのライフサイクルなど、Viewが意図を伝える入力。
+- `internal`: Dependency、Effect、通知、タイマーからFeatureへ戻る入力。
+- 子FeatureのAction: `child`、`rows`など、Reducer合成に必要な入力。
+- `destination`または`path`: PresentationとNavigation Stackの入力。
+- `delegate`: 子Featureから親Featureへ公開する出力。
 
-    public enum Action: ViewAction {
-        case view(View)
-        case destination(PresentationAction<Destination.Action>)
+`view`、`internal`、`delegate`への分割は設計規約であり、Swiftのアクセス制御ではない。`ViewAction`と`@ViewAction`はView用の`send`を提供し、View内の直接的な`store.send`へ警告を出して規約違反を見つけやすくする。
 
-        @CasePathable
-        public enum View {
-            case onTappedOpenButton
-        }
-    }
+親は原則として子の`delegate`だけを解釈する。親から子の処理を起動するために、子の`view`、`internal`、専用の処理要求Actionを送らない。親子で必要なロジックはChild Stateのメソッドへ抽出する。
 
-    public var body: some ReducerOf<Self> {
-        Reduce { state, action in
-            switch action {
-            case .view(.onTappedOpenButton):
-                state.destination = .childSheet(.init())
-                return .none
+分類、最小例、レビュー観点は[Action Boundaries](references/action-boundaries.md)を読む。
 
-            case .destination:
-                return .none
-            }
-        }
-        .ifLet(\.$destination, action: \.destination)
-    }
-}
-```
+## Destinationの選択
 
-### 2) 子 feature の結果は delegate で閉じる
-- 子の確定/キャンセルなど親に返したいイベントは `Action.Delegate` に置く。
-- 親は `case .destination(.presented(.childSheet(.delegate(...))))` で結果だけを受ける。
+表示方法ではなく、状態とEffectの寿命から選ぶ。
 
-### 3) dismiss 責務の分離
-- モーダルを閉じる責務は feature ごとに決めて固定する。
-- 代表的な 2 パターン:
-  - 子自身が `@Dependency(\.dismiss)` で閉じる。
-  - 親が delegate 受信時に `state.destination = nil` をセットする。
-- `sheet`/ `fullScreenCover` にキャンセルボタンがあり、要件が「非表示にするだけ」で親状態更新が不要な場合は、子 Reducer 側で `dismiss` を実行する。
-- 同一フロー内はどちらか一方に寄せ、二重 dismiss を避ける。
+### 表示と寿命が一致するChild Feature
 
-### 4) View 側の接続
-- `sheet`/ `fullScreenCover` は `item: $store.scope(state: \.destination?.xxx, action: \.destination.xxx)` で接続する。
+Child Stateを`Destination`のAssociated Valueとして持ち、親Stateでは`@Presents var destination`を使う。`PresentationReducer`はDestinationが`nil`になると、そのPresentation内で実行中のChild Effectを自動的にキャンセルする。
 
-### 5) Path との併用ルール
-- モーダル系は `destination`、push 系は `path` に分離する。
-- 1 feature 内で混在しても責務を分ける。
+### 画面を閉じた後も存続するChild Feature
 
-### 6) テスト観点
-- `view` Action で `state.destination` が正しくセットされることを確認する。
-- `destination(.presented(...delegate...))` 受信で、親状態更新と dismiss（`destination = nil` または `dismiss`）が期待通りかを確認する。
-- キャンセル系イベントが副作用なしで終了することを確認する。
+通信、ダウンロード、編集途中の状態などを残す場合は、Child Stateを親Stateの通常プロパティとして持ち、Child Reducerを通常の`Scope`で合成する。`Destination`にはAssociated Valueを持たない表示マーカーだけを置く。
 
-## Effective TCA Practices Beyond ViewAction
-- Dependency: `@Dependency` を使い、`Date()` / `UUID()` / 直接クライアント呼び出しを避ける。
-- Effect: 副作用は `.run` で起動し、結果は `internal` Action に戻す。
-- Parent-child: 子から親へは `delegate` で通知し、親は `destination(.presented(...delegate...))` を処理する。
-- Binding: `BindableAction` + `BindingReducer()` を使用し、View は原則 `$store` で bind する（手書き `Binding(get:set:)` は最小化）。
-- Navigation: `@Presents` / `StackState` と `ifLet` / `forEach` で状態駆動に統一する。
-- Naming: `onTapped...`, `...Response`, `did...` のように起点が分かる命名にする。
-  - ユーザー操作に対応するcase名は、"on" + "操作を表す動詞" + "操作対象"にする。
+Viewでは、列挙型スコープとSwift Navigationの`Binding.init(_:)`を使い、空Caseの`Optional<Void>`を`Bool`へ変換して`navigationDestination(isPresented:)`へ渡す。表示開始はReducerでDestinationを設定する。`Bool` Bindingへ`true`を書き込んで開始しない。
 
-## Review Checklist
-- View から送る Action が `view` に限定されている。
-- Effect の戻りが `internal` に集約されている。
-- 親子連携が `delegate` 経由になっている。
-- `destination`/`path`/`binding` が他カテゴリと混ざっていない。
-- View の binding が原則 `$store` 経由で、不要な `Binding(get:set:)` が増えていない。
-- Reducer の `switch` が Action 境界ごとに読み分けられる。
-- TestStore で主要フロー（view -> internal/delegate）を確認している。
+この構造でも、明示的なキャンセル、親Storeの破棄、`.task { await send(...).finish() }`を所有するViewの消失など、別のキャンセル経路は残る。
 
-## References
-- Action Boundaries の背景と ViewAction の設計意図: `references/action-boundaries.md`
+### AlertStateとの組み合わせ
 
-## Extension Notes
-この skill は継続的に拡張する前提。新しい知見は以下の方針で追記する。
-- 実装手順は `SKILL.md` に短く追記する。
-- 長い解説や出典は `references/` に分離する。
+TCA 1.25.5以降で、Associated Actionを持つ`AlertState`などの非Feature Stateを`@Reducer enum Destination`へ入れる場合は、`@ReducerCaseIgnored`と明示的な`@CasePathable enum Action`を使う。空の表示マーカーも同じDestinationへ置く場合、そのActionのAssociated Valueは`Never`にする。
+
+具体的なReducer、View、AlertState、テスト観点は[Destinationパターン](references/destination-pattern.md)を読む。
+
+## 親から子Actionを送らない
+
+ActionはReducerのメソッドではなく、ViewやEffectなどで起きた出来事を表す。親Viewまたは親Reducerが`.child(.refresh)`のような具体的な子Actionを生成して送ると、子の実装詳細が親の命令APIになるため、このスキルでは原則として採用しない。
+
+親と子の両方から同じ処理を起動する場合は、Child Stateへ`mutating`メソッドを追加する。
+
+- 同期的な状態更新だけなら、戻り値を持たないメソッドにする。
+- Effectを起動するなら、`Effect<ChildFeature.Action>`を返す。
+- 子ReducerはChild Stateのメソッドを直接呼ぶ。
+- 親Reducerも同じメソッドを呼び、返されたEffectだけを`.map { .child($0) }`で親Actionへ持ち上げる。
+
+`Action.child`はReducer合成の境界としてだけ使う。親は具体的な子Action Caseを構築せず、子Reducerの`reduce(into:action:)`も直接呼ばない。TCA 1.25以降ではReducerの直接呼び出しが非推奨であり、現行ソースも共有処理を両Reducerから呼べるヘルパーへ抽出する方法を示している。
+
+判断基準、最小例、Discussion #1952との対応は[親から子Actionを送らない](references/parent-child-communication.md)を読む。
+
+## バージョン境界
+
+- 列挙型スコープはTCA 1.25.0で導入され、主要な修正が1.25.2に入った。
+- Alertの明示Actionと空Caseを組み合わせる完全なパターンはTCA 1.25.5以降を使う。
+- TCA 1.26.0以降では、`$store.scope(\.$destination, action: \.destination).child`、`Scope(\.child, action: \.child)`、`store.scope(\.child, action: \.child)`形式を優先する。
+- TCA 1.25.5では、同じ呼び出しに`state:`ラベルが必要である。
+- 空Caseは`Optional<Void>`になるため、`Binding(...)`で`Bool`へ変換する。
+- TCA 1.25.0から1.25.4、および1.25未満では、固定リビジョンのMigration GuideとテストにあるAPIを使う。新しい構文をそのまま逆移植しない。
+
+## 検証
+
+最低限、次をTestStoreで確認する。
+
+- `view`から`internal`を経て状態が更新される。
+- 子の`delegate`だけが親の判断へ到達する。
+- 親から起動する子の処理はChild Stateのメソッドを使い、具体的な子Actionを送っていない。
+- 通常のPresentationではDismiss時にChild Effectがキャンセルされる。
+- 存続型ChildではDismiss後もChild Stateが残り、Effectの応答を受信できる。
+- Alert Actionが親へ届き、空CaseはOpen Actionで設定され、Dismiss Actionで`nil`になる。`Never`にPresented Actionがないことも確認する。
+
+コンパイルを伴う検証はリポジトリの`AGENTS.md`に従う。Xcodeでプロジェクトを開いている場合はXcode MCP Toolsを最優先し、次に`xcodebuild`、リソースを持たない純粋なSwift Packageに限って`swift test`または`swift build`を使う。
+
+## 完了時の報告
+
+次を簡潔に示す。
+
+- 採用したAction境界とDestinationの寿命モデル
+- 参照したTCAとSwift Navigationのバージョンまたはリビジョン
+- 実行したテストとビルド、その結果
+- 意図的に残した例外または未検証事項

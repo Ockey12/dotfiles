@@ -1,48 +1,217 @@
 # Action Boundaries
 
-## Summary
-Action Boundaries は「どの Action を、どこから送ってよいか」を明確にする設計方針。
+## 目次
 
-TCA では `Action` が feature の API なので、UI 起点イベント、内部イベント、親通知イベントを分離すると次の効果がある。
-- `Reducer.body`を読みやすくなる
-- View が内部 Action を誤って送る事故を防げる
-- 親子連携の経路が明確になる
-- テストで境界を検証しやすくなる
+- [位置づけ](#位置づけ)
+- [分類手順](#分類手順)
+- [最小構造](#最小構造)
+- [Reducerでの変換](#reducerでの変換)
+- [Viewから送るAction](#viewから送るaction)
+- [親子の境界](#親子の境界)
+- [親が子Actionを使わない](#親が子actionを使わない)
+- [テスト観点](#テスト観点)
+- [レビュー時の問題例](#レビュー時の問題例)
+- [一次ソース](#一次ソース)
 
-## Boundary Categories
-- `view`: ユーザー操作、View ライフサイクル。
-- `internal`: Effect 応答、タイマー、通知など UI 非起点イベント。
-- `delegate`: 子から親へ伝えるイベント。
-- `destination` / `path`: 画面遷移イベント。
-- `binding`: View との双方向バインディング。
+## 位置づけ
 
-## Why `ViewAction` Matters
-TCA の `ViewAction` と `@ViewAction(for:)` を使うと、View から送れる Action を `Action.View` に制限できる。
+Action Boundariesは、Actionを発生元と通知先で分ける設計規約である。TCAが`internal`、`delegate`という名前を強制しているわけではない。
 
-`@ViewAction` は View に `send(...)` ヘルパーを生成し、`store.send` 直叩きには警告を出すため、境界違反を早期に検出しやすい。
+`ViewAction`は`Action`の中からView用Actionの型を特定する。`@ViewAction(for:)`はViewへ`send`を提供し、View内での直接的な`store.send`へ診断を出す。内部ActionをSwiftの型システムで完全に非公開にする仕組みではない。
 
-## Adoption Steps
-1. `Action` を `ViewAction` 準拠にし、`case view(View)` を追加する。
-2. View 起点の case を `Action.View` に移す。
-3. View に `@ViewAction(for: Feature.self)` を付ける。
-4. View の `store.send(.view(...))` を `send(...)` に置き換える。
-5. Effect 応答を `internal`、親通知を `delegate` に寄せる。
-6. 親は `destination(.presented(...delegate...))` を受ける。
+## 分類手順
 
-## Notes For Reviews
-- View が `internal`/`delegate` を直接送っていないか。
-- 親が子の `view` を直接読んでいないか。
-- `Reducer.body`の switch をカテゴリ単位で追えるか。
-- 命名から起点が分かるか（`onTapped...`, `...Response`, `did...`）。
+Actionごとに次を順番に問う。
 
-## Sources
-- Merowing, "A better way to separate view actions from business logic in The Composable Architecture"  
-  https://www.merowing.info/the-composable-architecture-best-practices/
-- Point-Free discussion: "Action names and separation in bigger features" (#1440)  
-  https://github.com/pointfreeco/swift-composable-architecture/discussions/1440
-- TCA source: `ViewAction` protocol  
-  https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Observation/ViewAction.swift
-- TCA source: `@ViewAction(for:)` macro docs  
-  https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Macros.swift
-- TCA migration guide (v1.7): View actions section  
-  https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Documentation.docc/Articles/MigrationGuides/MigratingTo1.7.md
+1. `BindingAction<State>`か。該当すれば`binding`にする。
+2. Viewがユーザーの意図またはライフサイクルを伝えるか。該当すれば`view`にする。
+3. Effect、Dependency、タイマー、通知から戻るか。該当すれば`internal`にする。
+4. 子Reducer、Presentation、Navigation Stackを合成するためのActionか。該当する専用Caseにする。
+5. 子Featureが親へ結果を通知するか。該当すれば`delegate`にする。
+
+Action名は実装手段ではなく意味を表す。
+
+| 境界 | 例 | 主な送信元 | 主な受信先 |
+| --- | --- | --- | --- |
+| `binding` | `BindingAction<State>` | ViewのBinding | `BindingReducer` |
+| `view` | `onTappedSaveButton` | View | 同じFeature |
+| `internal` | `saveFinished` | Effect | 同じFeature |
+| `child` | `ChildFeature.Action` | 子Store | 子Reducer |
+| `destination` | `PresentationAction` | Presentation | Destination Reducer |
+| `delegate` | `didSave` | 子Feature | 親Feature |
+
+## 最小構造
+
+```swift
+import ComposableArchitecture
+
+@Reducer
+struct EditorFeature {
+  @ObservableState
+  struct State: Equatable {
+    var isSaving = false
+    var title = ""
+  }
+
+  enum Action: BindableAction, ViewAction {
+    case binding(BindingAction<State>)
+    case view(View)
+    case `internal`(Internal)
+    case delegate(Delegate)
+
+    @CasePathable
+    enum View {
+      case onTappedSaveButton
+    }
+
+    @CasePathable
+    enum Internal {
+      case saveFinished
+    }
+
+    @CasePathable
+    enum Delegate {
+      case didSave
+    }
+  }
+
+  @Dependency(\.continuousClock) var clock
+
+  var body: some ReducerOf<Self> {
+    BindingReducer()
+    Reduce { state, action in
+      switch action {
+      case .view(.onTappedSaveButton):
+        state.isSaving = true
+        return .run { send in
+          try await clock.sleep(for: .seconds(1))
+          await send(.internal(.saveFinished))
+        }
+
+      case .internal(.saveFinished):
+        state.isSaving = false
+        return .send(.delegate(.didSave))
+
+      case .binding, .delegate:
+        return .none
+      }
+    }
+  }
+}
+```
+
+`@Reducer`はトップレベルの`Action`へCase Path対応を生成する。ネストした`View`、`Internal`、`Delegate`をKey Path形式のテストやReducerで参照する場合は、各型へ`@CasePathable`を明示する。
+
+## Reducerでの変換
+
+Reducerは境界を越える箇所を明示する。
+
+```text
+View → view → Effect → internal → State更新 → delegate → Parent
+Parent → Child Stateのメソッド → Effect<Child.Action> → map → child → Child Reducer
+```
+
+- `view`ではユーザーの意図を解釈し、状態更新またはEffectを開始する。
+- Effectの値と失敗は`internal`へ戻し、状態遷移をReducerに集約する。
+- 親が知るべき結果だけを`delegate`として送る。
+- `delegate`を送る前に、子が所有する状態を確定させる。
+- 親と子から起動する処理はChild Stateのメソッドへ抽出し、親は具体的な子Actionを送らない。
+
+Effect内で親Stateを直接変更したり、Viewから`internal`を送ったりしない。
+
+## Viewから送るAction
+
+```swift
+import ComposableArchitecture
+import SwiftUI
+
+@ViewAction(for: EditorFeature.self)
+struct EditorView: View {
+  @Bindable var store: StoreOf<EditorFeature>
+
+  var body: some View {
+    Form {
+      TextField("Title", text: $store.title)
+      Button("Save") {
+        send(.onTappedSaveButton)
+      }
+      .disabled(store.isSaving)
+    }
+  }
+}
+```
+
+フォーム入力は`BindableAction`と`BindingReducer`を使い、通常は`$store`からBindingを作る。状態から導出できるBindingのために`Binding(get:set:)`を手書きしない。
+
+`@ViewAction`の診断は境界違反を見つける補助である。マクロを付けただけで内部Actionがアクセス不能になるとは説明しない。
+
+## 親子の境界
+
+親は子が公開した`delegate`を処理する。
+
+```swift
+case .child(.delegate(.didSave)):
+  state.lastSavedAt = clock.now
+  return .none
+```
+
+親のAlertから子の再試行処理を起動する場合は、Child Stateへ共有メソッドを定義する。親から子Actionを送らず、返されたEffectをReducer合成用のActionへ持ち上げる。
+
+```swift
+case .destination(.presented(.alert(.onTappedRetryButton))):
+  return state.child.retry().map { .child($0) }
+```
+
+同期的な状態更新だけで完結する場合は、`retry()`のようなメソッドにEffectを返させず、その場で`.none`を返す。Effectを返す共有メソッドの定義方法は[親から子Actionを送らない](parent-child-communication.md)を読む。
+
+Presentation内の子であれば、形は次のようになる。
+
+```swift
+case .destination(.presented(.editor(.delegate(.didSave)))):
+  state.destination = nil
+  return .none
+```
+
+親が子の`view(.onTappedSaveButton)`や`internal(.saveFinished)`を処理すると、子の実装詳細が親のAPIになる。親へ伝える意味を`delegate`として命名する。
+
+## 親が子Actionを使わない
+
+親は、子へ処理を命令するためのAction Caseを追加しない。親Viewから`store.send(.child(...))`を呼んだり、親Reducerから`.send(.child(...))`を返したりしない。
+
+親が子に関係する処理を所有する場合は、次の順序で責務を見直す。
+
+1. 親だけが所有する処理なら、親のState、Action、Dependencyへ置く。
+2. 子だけが所有する処理なら、子のViewまたはEffectから子Actionを送る。
+3. 親と子の両方から必要なら、Child Stateへ共有メソッドを抽出する。
+4. 子から親の判断が必要なら、意味のある`delegate`を送る。
+
+`case child(ChildFeature.Action)`はReducer合成に必要である。禁止するのはこのCase自体ではなく、親が具体的な子Actionを命令として構築、解釈することである。
+
+## テスト観点
+
+- View Actionが期待するStateだけを変更する。
+- Effectの応答が`internal`として戻る。
+- `internal`の処理後に必要な`delegate`が送られる。
+- 子の結果を理由に親Stateを更新するのは、`delegate`受信時に限定する。
+- 親から子の処理を起動するときはChild Stateの共有メソッドを使い、具体的な子Actionを送っていない。
+- 共有メソッドが返したEffectのActionは、`child` Caseへmapされて子Reducerへ届く。
+- `binding`は`BindingReducer`で処理され、同じ変更をView Actionで重複実装していない。
+- キャンセル時に完了ActionやDelegateを誤送信しない。
+
+## レビュー時の問題例
+
+- Viewが`.internal(...)`または`.delegate(...)`を直接送っている。
+- API応答Actionが`view`に入っている。
+- 親が子のボタン名や通信応答を直接switchしている。
+- 親Viewまたは親Reducerが子へ具体的なActionを送っている。
+- 親が子Reducerの`reduce(into:action:)`を直接呼んでいる。
+- すべてのActionを`view`に入れ、Reducer合成のActionまで隠している。
+- View ActionがUI部品の名前だけを表し、ユーザーの意図を表していない。
+- `@ViewAction`を型レベルの完全なアクセス制御として説明している。
+
+## 一次ソース
+
+- TCAの`ViewAction`実装: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Observation/ViewAction.swift
+- `@ViewAction`マクロの宣言: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Macros.swift
+- View Action導入のMigration Guide: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Documentation.docc/Articles/MigrationGuides/MigratingTo1.7.md
+- Action分割に関するTCA Discussion: https://github.com/pointfreeco/swift-composable-architecture/discussions/1440

@@ -1,0 +1,234 @@
+# 親から子Actionを送らない
+
+## 目次
+
+- [原則](#原則)
+- [送信を避ける理由](#送信を避ける理由)
+- [選択基準](#選択基準)
+- [同期処理を共有する](#同期処理を共有する)
+- [Effectを伴う処理を共有する](#effectを伴う処理を共有する)
+- [mapの役割](#mapの役割)
+- [直接Reducerを呼ばない](#直接reducerを呼ばない)
+- [Delegateとの関係](#delegateとの関係)
+- [テスト観点](#テスト観点)
+- [参照資料](#参照資料)
+
+## 原則
+
+親Viewまたは親Reducerから、処理の命令として具体的な子Actionを送らない。
+
+```swift
+// 採用しない
+return .send(.child(.refresh))
+```
+
+親と子の両方から同じ処理を起動する必要がある場合は、その処理をChild Stateの`mutating`メソッドへ抽出する。同期的な状態更新はメソッド内で行い、後続のActionを発生させるEffectがあれば`Effect<ChildFeature.Action>`として返す。
+
+親は返されたEffectを`.map { .child($0) }`で親Actionへ持ち上げる。親が知るのは共有メソッドとReducer合成用の`child` Caseだけであり、具体的な子Action Caseではない。
+
+## 送信を避ける理由
+
+TCAのActionは、Viewでの操作、Dependencyからの応答、子から親への通知など、システム内で起きた出来事を表す。Reducerのメソッド名や、別Featureから実行する命令として扱わない。
+
+親が`.child(.refresh)`を作る設計には次の問題がある。
+
+- 子Actionの具体的なCaseが親のAPIになる。
+- 子の処理手順を変えるだけで、親Reducerと親のテストも変更しやすくなる。
+- View由来でもEffect由来でもないActionが、親から子への命令として追加される。
+- 子のAction境界を分けても、親がその内部Caseへ依存すれば境界が崩れる。
+
+Discussion #1952でTCAのメンテナは、親が子Actionを送る2つの形をどちらも推奨せず、Child Stateのメソッドへ処理を抽出し、そのEffectを親Actionへmapする形を示している。
+
+## 選択基準
+
+| 要件 | 置き場所 |
+| --- | --- |
+| 親だけが所有する処理 | 親のState、Action、Dependency |
+| 子だけが所有する処理 | 子のView ActionまたはEffect応答 |
+| 親と子の両方から起動する子の処理 | Child Stateの共有メソッド |
+| 子から親の判断を求める通知 | 子の`delegate` |
+
+共有メソッドへ抽出しても責務が不自然なら、処理の所有者が子ではない可能性がある。複数Featureにまたがる処理は、共通の親FeatureまたはDependencyへ引き上げる。
+
+## 同期処理を共有する
+
+同期的な状態更新だけなら、Effectを返さない。
+
+```swift
+extension ChildFeature.State {
+  mutating func clearSelection() {
+    selectedID = nil
+  }
+}
+```
+
+子Reducerと親Reducerのどちらからも同じメソッドを呼べる。
+
+```swift
+case .view(.onTappedClearButton):
+  state.clearSelection()
+  return .none
+```
+
+```swift
+case .view(.onTappedClearChildSelectionButton):
+  state.child.clearSelection()
+  return .none
+```
+
+常に`.none`しか返さないメソッドを`Effect`型にしない。状態不変条件をメソッドへ集約し、呼び出し元に同じ更新を重複させない。
+
+## Effectを伴う処理を共有する
+
+次の例では、更新処理をChild Stateの`refresh()`へ抽出する。子ReducerはView Actionから呼び、親Reducerは親自身のView Actionから同じ処理を呼ぶ。
+
+```swift
+import ComposableArchitecture
+
+@Reducer
+struct ChildFeature {
+  @ObservableState
+  struct State: Equatable {
+    var isRefreshing = false
+
+    mutating func refresh() -> Effect<ChildFeature.Action> {
+      @Dependency(\.continuousClock) var clock
+
+      isRefreshing = true
+      return .run { send in
+        try await clock.sleep(for: .seconds(1))
+        await send(.internal(.refreshFinished))
+      }
+    }
+  }
+
+  enum Action: ViewAction {
+    case view(View)
+    case `internal`(Internal)
+
+    @CasePathable
+    enum View {
+      case onTappedRefreshButton
+    }
+
+    enum Internal {
+      case refreshFinished
+    }
+  }
+
+  var body: some ReducerOf<Self> {
+    Reduce { state, action in
+      switch action {
+      case .view(.onTappedRefreshButton):
+        return state.refresh()
+
+      case .internal(.refreshFinished):
+        state.isRefreshing = false
+        return .none
+      }
+    }
+  }
+}
+```
+
+親は具体的な`ChildFeature.Action`を生成しない。共有メソッドが返すEffectの出力だけを、Reducer合成用のCaseへ変換する。
+
+```swift
+@Reducer
+struct ParentFeature {
+  @ObservableState
+  struct State: Equatable {
+    var child = ChildFeature.State()
+  }
+
+  enum Action: ViewAction {
+    case child(ChildFeature.Action)
+    case view(View)
+
+    @CasePathable
+    enum View {
+      case onTappedRefreshChildButton
+    }
+  }
+
+  var body: some ReducerOf<Self> {
+    Scope(\.child, action: \.child) {
+      ChildFeature()
+    }
+
+    Reduce { state, action in
+      switch action {
+      case .view(.onTappedRefreshChildButton):
+        return state.child.refresh().map { .child($0) }
+
+      case .child:
+        return .none
+      }
+    }
+  }
+}
+```
+
+サンプルの待機処理はDependencyを使う最小例である。実際の通信ではAPI ClientなどのDependencyを使い、成功と失敗を子の`internal` Actionへ戻す。
+
+## mapの役割
+
+`state.child.refresh()`の戻り値は`Effect<ChildFeature.Action>`であり、親Reducerは`Effect<ParentFeature.Action>`を返す必要がある。`.map { .child($0) }`は、Effectが将来出力する子Actionを親Actionの`child` Caseで包む。
+
+```text
+Child Stateの同期更新
+→ Effect<Child.Action>
+→ map
+→ Effect<Parent.Action.child>
+→ Scope
+→ Child Reducer
+```
+
+これは`.send(.child(.refresh))`とは異なる。親は処理開始用の子Actionを構築せず、共有メソッドが生成したEffectの出力型を合成境界へ変換しているだけである。
+
+Discussion #1952の例は`.map(Action.child)`を使う。Swift 6のStrict Concurrencyではenum caseを関数参照として渡すとSendable警告が発生し得るため、この資料ではTCA 1.15 Migration Guideに従って`.map { .child($0) }`を使う。
+
+## 直接Reducerを呼ばない
+
+共有ロジックを再利用するために、子Reducerを親から直接実行しない。
+
+```swift
+// 採用しない
+return ChildFeature()
+  .reduce(into: &state.child, action: .view(.onTappedRefreshButton))
+  .map { .child($0) }
+```
+
+TCA 1.25 Migration Guideでは、`reduce(into:action:)`の直接呼び出しが非推奨になった。現行の`Reducer.swift`にある非推奨メッセージも、新しいActionをStoreへ送らない場合は、両Reducerから呼べるヘルパーを抽出するよう案内している。
+
+同じメッセージは`.send(.child(...))`も機械的な移行手段として示す。しかし、親子で処理を共有する設計では親が具体的な子Actionへ依存するため、このスキルではChild Stateの共有メソッドを優先する。
+
+## Delegateとの関係
+
+共有メソッドは親から子のロジックを起動する境界であり、`delegate`は子から親へ結果や判断材料を通知する境界である。役割を入れ替えない。
+
+```text
+Parent Action → Child Stateの共有メソッド
+Childで起きた公開すべき結果 → Child.delegate → Parent Reducer
+```
+
+親は`.child(.delegate(...))`だけを解釈する。子の`view`や`internal`を親がswitchしない。
+
+## テスト観点
+
+- 子のView Actionから共有メソッドを呼ぶと、同期Stateが更新される。
+- 親のActionから同じ共有メソッドを呼ぶと、同じ同期Stateが更新される。
+- 共有メソッドが返したEffectのActionは、親の`child` Caseを経て子Reducerへ届く。
+- 親Reducerは具体的な子の`view`または`internal` Actionを生成、解釈しない。
+- Effect完了後に子Stateが期待どおり更新される。
+- キャンセル要件がある場合は、共有メソッドが返すEffectへ明示的なCancellation IDを付け、所有者から停止できる。
+
+Presentationを閉じた後もEffectを継続する要件では、共有メソッドだけでなくChild StateとReducerの寿命も確認する。[Destinationパターン](destination-pattern.md)に従い、Child Stateを親の通常プロパティとして保持する。
+
+## 参照資料
+
+- 親から子Actionを送る設計に関するTCA Discussion #1952: https://github.com/pointfreeco/swift-composable-architecture/discussions/1952
+- Reducer直接呼び出しの非推奨メッセージ: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Reducer.swift
+- TCA 1.25 Migration Guide: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Documentation.docc/Articles/MigrationGuides/MigratingTo1.25.md
+- enum caseの関数参照に関するTCA 1.15 Migration Guide: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Documentation.docc/Articles/MigrationGuides/MigratingTo1.15.md
+- Discussion #1952を解説する日本語記事: https://zenn.dev/kalupas226/articles/87b1f7b245915c
