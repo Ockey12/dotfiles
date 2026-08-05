@@ -1,0 +1,25 @@
+#!/bin/bash
+set -u
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$root" || exit 0
+
+untracked_added=0
+
+while IFS= read -r -d $'\0' file; do
+  [ -f "$file" ] || [ -L "$file" ] || continue
+
+  out=$(git diff --numstat --no-index -- /dev/null "$file" 2>/dev/null || true)
+
+  a=${out%%$'\t'*}
+  rest=${out#*$'\t'}
+  d=${rest%%$'\t'*}
+
+  [[ "$a" =~ ^[0-9]+$ && "$d" =~ ^[0-9]+$ ]] || continue
+
+  (( untracked_added += a ))
+done < <(git ls-files --others --exclude-standard -z 2>/dev/null)
+
+if (( untracked_added > 0 )); then
+  printf '%s\n' "$untracked_added"
+fi
