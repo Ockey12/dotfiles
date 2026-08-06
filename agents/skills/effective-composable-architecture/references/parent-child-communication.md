@@ -5,6 +5,7 @@
 - [原則](#原則)
 - [送信を避ける理由](#送信を避ける理由)
 - [選択基準](#選択基準)
+- [ParentだけがChild Stateを更新する](#parentだけがchild-stateを更新する)
 - [同期処理を共有する](#同期処理を共有する)
 - [Effectを伴う処理を共有する](#effectを伴う処理を共有する)
 - [mapの役割](#mapの役割)
@@ -21,6 +22,8 @@
 // 採用しない
 return .send(.child(.refresh))
 ```
+
+Parent Reducerの処理がChild Stateの同期更新だけで完結し、その更新をChild Reducerから行わない場合は、Parent Reducerで直接更新する。Child Stateへ親専用のメソッドを追加しない。
 
 親と子の両方から同じ処理を起動する必要がある場合は、その処理をChild Stateの`mutating`メソッドへ抽出する。同期的な状態更新はメソッド内で行い、後続のActionを発生させるEffectがあれば`Effect<ChildFeature.Action>`として返す。
 
@@ -43,16 +46,30 @@ Discussion #1952でTCAのメンテナは、親が子Actionを送る2つの形を
 
 | 要件 | 置き場所 |
 | --- | --- |
-| 親だけが所有する処理 | 親のState、Action、Dependency |
+| Parent Reducerだけで完結し、Child Reducerと共有しないChild Stateの同期更新 | Parent ReducerからChild Stateを直接更新 |
+| 親だけが所有するその他の処理 | 親のState、Action、Dependency |
 | 子だけが所有する処理 | 子のView ActionまたはEffect応答 |
-| 親と子の両方から起動する子の処理 | Child Stateの共有メソッド |
+| Child ReducerとParent Reducerが同じ更新または処理を行う | Child Stateの共有メソッド |
+| ParentからChildが所有するEffectを起動する処理 | Effectを返すChild Stateのメソッド |
 | 子から親の判断を求める通知 | 子の`delegate` |
 
 共有メソッドへ抽出しても責務が不自然なら、処理の所有者が子ではない可能性がある。複数Featureにまたがる処理は、共通の親FeatureまたはDependencyへ引き上げる。
 
+## ParentだけがChild Stateを更新する
+
+Parentが受け取ったEffectの応答や観測値によってChild Stateを同期的に更新するだけで処理が完結し、Child Reducerから同じ更新を行わない場合は、Parent Reducerで直接更新する。
+
+```swift
+case let .internal(.childProgressUpdated(progress)):
+  state.child.progress = progress
+  return .none
+```
+
+この代入だけを隠す`updateProgressFromParent(_:)`のようなメソッドをChild Stateへ追加しない。ChildがParentのActionやデータ取得手順を意識するAPIになり、状態更新の所有者が不明確になるためである。
+
 ## 同期処理を共有する
 
-同期的な状態更新だけなら、Effectを返さない。
+Child ReducerとParent Reducerが同じ同期的な状態更新を行う場合は、Child Stateのメソッドへ抽出する。同期的な状態更新だけなら、Effectを返さない。
 
 ```swift
 extension ChildFeature.State {
@@ -216,6 +233,8 @@ Childで起きた公開すべき結果 → Child.delegate → Parent Reducer
 
 ## テスト観点
 
+- Parent Reducerだけで完結し、Child Reducerと共有しないChild Stateの同期更新では、Parent ActionからChild Stateを直接更新する。
+- Parent専用の代入を隠すためだけのChild Stateメソッドを追加していない。
 - 子のView Actionから共有メソッドを呼ぶと、同期Stateが更新される。
 - 親のActionから同じ共有メソッドを呼ぶと、同じ同期Stateが更新される。
 - 共有メソッドが返したEffectのActionは、親の`child` Caseを経て子Reducerへ届く。

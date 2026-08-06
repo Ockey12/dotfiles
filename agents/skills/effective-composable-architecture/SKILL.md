@@ -12,7 +12,7 @@ Featureの入力境界、状態の所有権、Effectの寿命をコードから�
 ## 成果条件
 
 - View、Effect、子Feature、親Featureから届くActionを分類できる。
-- 親が具体的な子Actionを命令として送らず、共有ロジックをChild Stateへ抽出できる。
+- 親が具体的な子Actionを命令として送らず、Parent専用のChild State更新と親子で共有する更新を区別できる。
 - 画面の表示期間とChild Featureの寿命が一致するかを判断できる。
 - 対象プロジェクトが固定するTCAのAPIで実装できる。
 - 境界とライフサイクルをTestStoreで検証できる。
@@ -41,7 +41,7 @@ Featureの入力境界、状態の所有権、Effectの寿命をコードから�
 
 1. Featureごとに状態の所有者と必要な寿命を決める。
 2. Actionを発生元と通知先で分類する。
-3. 親から子の処理を起動する要件があれば、具体的な子Actionではなく共有可能なChild Stateのメソッドへ抽出する。
+3. Parent Reducerの処理がChild Stateの同期更新だけで完結し、Child Reducerから同じ更新を行わないなら直接更新する。Child ReducerとParent Reducerが同じ更新を行うならChild Stateのメソッドへ抽出する。具体的な子Actionは送らない。
 4. 表示を閉じたときにChild Effectをキャンセルするか継続するかを決める。
 5. Reducer、View、親子のScopeを実装する。
 6. Actionの流れとEffectの寿命をテストする。
@@ -65,7 +65,7 @@ Actionは次の順序で分類する。
 
 `view`、`internal`、`delegate`への分割は設計規約であり、Swiftのアクセス制御ではない。`ViewAction`と`@ViewAction`はView用の`send`を提供し、View内の直接的な`store.send`へ警告を出して規約違反を見つけやすくする。
 
-親は原則として子の`delegate`だけを解釈する。親から子の処理を起動するために、子の`view`、`internal`、専用の処理要求Actionを送らない。親子で必要なロジックはChild Stateのメソッドへ抽出する。
+親は原則として子の`delegate`だけを解釈する。親から子の処理を起動するために、子の`view`、`internal`、専用の処理要求Actionを送らない。Parent Reducerの処理がChild Stateの同期更新だけで完結し、Child Reducerから同じ更新を行わないなら直接更新する。同じ同期更新を目的としてParent ReducerからChild Stateのメソッドを呼ぶのは、Child ReducerとParent Reducerがその更新を共有する場合に限る。
 
 分類、最小例、レビュー観点は[Action Boundaries](references/action-boundaries.md)を読む。
 
@@ -95,12 +95,16 @@ TCA 1.25.5以降で、Associated Actionを持つ`AlertState`などの非Feature 
 
 ActionはReducerのメソッドではなく、ViewやEffectなどで起きた出来事を表す。親Viewまたは親Reducerが`.child(.refresh)`のような具体的な子Actionを生成して送ると、子の実装詳細が親の命令APIになるため、このスキルでは原則として採用しない。
 
+Parent Reducerの処理がChild Stateの同期更新だけで完結し、Child Reducerから同じ更新を行わない場合は、Parent Reducerで直接更新する。その更新のためだけにChild Stateへ親専用のメソッドを追加しない。
+
+Child Stateの更新とともにChildが所有するEffectを起動する場合は、この直接更新ルールの対象外である。Child Stateのメソッドが`Effect<ChildFeature.Action>`を返し、親Reducerはその出力をReducer合成用のActionへmapする。
+
 親と子の両方から同じ処理を起動する場合は、Child Stateへ`mutating`メソッドを追加する。
 
 - 同期的な状態更新だけなら、戻り値を持たないメソッドにする。
 - Effectを起動するなら、`Effect<ChildFeature.Action>`を返す。
 - 子ReducerはChild Stateのメソッドを直接呼ぶ。
-- 親Reducerも同じメソッドを呼び、返されたEffectだけを`.map { .child($0) }`で親Actionへ持ち上げる。
+- 親Reducerも同じメソッドを呼ぶ。Effectを返す場合は、その出力だけを`.map { .child($0) }`で親Actionへ持ち上げる。
 
 `Action.child`はReducer合成の境界としてだけ使う。親は具体的な子Action Caseを構築せず、子Reducerの`reduce(into:action:)`も直接呼ばない。TCA 1.25以降ではReducerの直接呼び出しが非推奨であり、現行ソースも共有処理を両Reducerから呼べるヘルパーへ抽出する方法を示している。
 
@@ -117,14 +121,20 @@ ActionはReducerのメソッドではなく、ViewやEffectなどで起きた出
 
 ## 検証
 
-最低限、次をTestStoreで確認する。
+最低限、次の挙動をTestStoreで確認する。
 
 - `view`から`internal`を経て状態が更新される。
 - 子の`delegate`だけが親の判断へ到達する。
-- 親から起動する子の処理はChild Stateのメソッドを使い、具体的な子Actionを送っていない。
+- Parent Reducerだけで完結する同期更新では、Parent Actionから期待するChild Stateへ遷移する。
+- Child ReducerとParent Reducerが同じ更新を行う場合は、どちらのActionからも同じChild Stateへ遷移する。
 - 通常のPresentationではDismiss時にChild Effectがキャンセルされる。
 - 存続型ChildではDismiss後もChild Stateが残り、Effectの応答を受信できる。
 - Alert Actionが親へ届き、空CaseはOpen Actionで設定され、Dismiss Actionで`nil`になる。`Never`にPresented Actionがないことも確認する。
+
+次の構造はコードレビューで確認する。
+
+- Parent Reducerだけで完結し、Child Reducerと共有しないChild Stateの同期更新は直接行い、親専用のChild Stateメソッドを追加していない。
+- Child ReducerとParent Reducerが同じ更新を行う場合はChild Stateのメソッドへ抽出し、具体的な子Actionを送っていない。
 
 コンパイルを伴う検証はリポジトリの`AGENTS.md`に従う。Xcodeでプロジェクトを開いている場合はXcode MCP Toolsを最優先し、次に`xcodebuild`、リソースを持たない純粋なSwift Packageに限って`swift test`または`swift build`を使う。
 

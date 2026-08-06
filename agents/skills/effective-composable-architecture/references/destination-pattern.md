@@ -241,7 +241,7 @@ ViewではDestination全体へScopeしてからAlert Caseを渡す。
 
 親Reducerは`.destination(.presented(.alert(.onTappedRetryButton)))`を処理する。Alertしか表示しないFeatureでは、単独の`@Presents var alert: AlertState<Action.Alert>?`の方が単純である。複数の表示を相互排他的に管理するときにDestinationへまとめる。
 
-通信失敗と再試行をChildが所有する場合は、Action経路を次のようにする。
+通信失敗と再試行EffectをChildが所有する場合は、Action経路を次のようにする。
 
 ```text
 Child.internal.uploadFailed
@@ -251,7 +251,7 @@ Child.internal.uploadFailed
 → Child Stateのretry() → Effect<Child.Action> → map → Parent.child
 ```
 
-親ReducerはAlert Actionを受け取り、Child Stateへ抽出した共有メソッドを呼ぶ。具体的な子Actionを命令として送らず、Effectから生じるActionだけをReducer合成用の`child` Caseへ持ち上げる。
+親ReducerはAlert Actionを受け取り、Child Stateへ抽出した再試行メソッドを呼ぶ。具体的な子Actionを命令として送らず、Effectから生じるActionだけをReducer合成用の`child` Caseへ持ち上げる。
 
 ```swift
 case .child(.delegate(.didFail)):
@@ -262,7 +262,7 @@ case .destination(.presented(.alert(.onTappedRetryButton))):
   return state.child.retry().map { .child($0) }
 ```
 
-`retryAlert`は前述の`AlertState`である。`retry()`は同期的にChild Stateを更新し、必要なら`Effect<ChildFeature.Action>`を返す。定義方法と設計理由は[親から子Actionを送らない](parent-child-communication.md)を読む。
+`retryAlert`は前述の`AlertState`である。`retry()`は同期的にChild Stateを更新し、Childが所有する`Effect<ChildFeature.Action>`を返す。Parent Reducerの処理がChild Stateの同期更新だけで完結し、Child Reducerから同じ更新を行わない場合は、このメソッドを追加せず、Parent Reducerで直接更新する。定義方法と設計理由は[親から子Actionを送らない](parent-child-communication.md)を読む。
 
 ## キャンセル経路
 
