@@ -241,7 +241,7 @@ ViewではDestination全体へScopeしてからAlert Caseを渡す。
 
 親Reducerは`.destination(.presented(.alert(.onTappedRetryButton)))`を処理する。Alertしか表示しないFeatureでは、単独の`@Presents var alert: AlertState<Action.Alert>?`の方が単純である。複数の表示を相互排他的に管理するときにDestinationへまとめる。
 
-通信失敗と再試行EffectをChildが所有する場合は、Action経路を次のようにする。
+通信失敗と再試行のドメインロジックを永続Childが所有し、Parent側の寿命でEffectを管理する場合は、Action経路を次のようにする。
 
 ```text
 Child.internal.uploadFailed
@@ -262,7 +262,7 @@ case .destination(.presented(.alert(.onTappedRetryButton))):
   return state.child.retry().map { .child($0) }
 ```
 
-`retryAlert`は前述の`AlertState`である。`retry()`は同期的にChild Stateを更新し、Childが所有する`Effect<ChildFeature.Action>`を返す。Parent Reducerの処理がChild Stateの同期更新だけで完結し、Child Reducerから同じ更新を行わない場合は、このメソッドを追加せず、Parent Reducerで直接更新する。定義方法と設計理由は[親から子Actionを送らない](parent-child-communication.md)を読む。
+`retryAlert`は前述の`AlertState`である。`retry()`は同期的にChild Stateを更新し、`Effect<ChildFeature.Action>`を返す。Parent Reducerが返すため、Reducer合成上はParent側のEffectになるが、この例ではChild Stateが永続し、DismissによるChild破棄がない。Parent Reducerの処理がChild Stateの同期更新だけで完結し、Child Reducerから同じ更新を行わない場合は、このメソッドを追加せず、Parent Reducerで直接更新する。定義方法と設計理由は[親から子Actionを送らない](parent-child-communication.md)を読む。
 
 ## キャンセル経路
 

@@ -110,7 +110,8 @@ Reducerは境界を越える箇所を明示する。
 View → view → Effect → internal → State更新 → delegate → Parent
 Parentだけで完結し、Childと共有しないChild Stateの同期更新 → Parent Reducerで直接更新
 ParentとChildが同じ同期更新を行う → Child Stateのメソッド
-ParentからChildが所有するEffectを起動 → Child Stateのメソッド → Effect<Child.Action> → map → child → Child Reducer
+ParentからEffectを起動し、Parent側で管理する → Child Stateのメソッド → Effect<Child.Action> → map → child → Child Reducer
+一時的なChildが所有し、Child破棄時に自動キャンセルするEffect → 設計見直し → Parentのsend → Childの専用Trigger Action → Child Reducer
 ```
 
 - `view`ではユーザーの意図を解釈し、状態更新またはEffectを開始する。
@@ -119,7 +120,8 @@ ParentからChildが所有するEffectを起動 → Child Stateのメソッド �
 - `delegate`を送る前に、子が所有する状態を確定させる。
 - Parent Reducerだけで完結し、Child Reducerと共有しないChild Stateの同期更新は、Parent Reducerで直接更新する。
 - ParentとChildから同じ同期更新を行う場合は、Effectを返さないChild Stateのメソッドへ抽出する。
-- ParentからChildが所有するEffectを起動する場合は、Effectを返すChild Stateのメソッドを使い、具体的な子Actionを送らない。
+- ParentからEffectを起動し、Parent側の寿命または明示的なキャンセルで管理する場合は、Effectを返すChild Stateのメソッドを使い、具体的な子Actionを送らない。
+- 一時的なChildが所有するEffectをChild破棄時に自動キャンセルする場合だけ、親子境界とEffectの所有者を再検討してから、専用のTrigger Actionを送る例外を認める。
 
 Effect内で親Stateを直接変更したり、Viewから`internal`を送ったりしない。
 
@@ -167,14 +169,14 @@ case let .internal(.childProgressUpdated(progress)):
   return .none
 ```
 
-親のAlertからChildが所有する再試行Effectを起動する場合は、Child Stateへメソッドを定義する。親から子Actionを送らず、返されたEffectをReducer合成用のActionへ持ち上げる。
+親のAlertからChildが所有する再試行Effectを起動し、Parent側の寿命または明示的なキャンセルで管理する場合は、Child Stateへメソッドを定義する。親から子Actionを送らず、返されたEffectをReducer合成用のActionへ持ち上げる。
 
 ```swift
 case .destination(.presented(.alert(.onTappedRetryButton))):
   return state.child.retry().map { .child($0) }
 ```
 
-この例の`retry()`はChildが所有するEffectを返す。Parent Reducerの処理がChild Stateの同期更新だけで完結し、Child Reducerから同じ更新を行わない場合は、メソッドを追加せず、Parent Reducerで直接更新する。Child ReducerとParent Reducerが同じ同期的な更新を行う場合は、Effectを返さない共有メソッドへ抽出する。定義方法は[親から子Actionを送らない](parent-child-communication.md)を読む。
+この例の`retry()`はChildのActionを出力するEffectを返すが、Parent Reducerが返すため、Reducer合成上はParent側のEffectになる。Parent Reducerの処理がChild Stateの同期更新だけで完結し、Child Reducerから同じ更新を行わない場合は、メソッドを追加せず、Parent Reducerで直接更新する。Child ReducerとParent Reducerが同じ同期的な更新を行う場合は、Effectを返さない共有メソッドへ抽出する。一時的なChildの破棄時にEffectを自動キャンセルする場合は、[親から子Actionを送らない](parent-child-communication.md#child破棄に連動するeffectの例外)にある例外を確認する。
 
 Presentation内の子であれば、形は次のようになる。
 
@@ -188,7 +190,7 @@ case .destination(.presented(.editor(.delegate(.didSave)))):
 
 ## 親が子Actionを使わない
 
-親は、子へ処理を命令するためのAction Caseを追加しない。親Viewから`store.send(.child(...))`を呼んだり、親Reducerから`.send(.child(...))`を返したりしない。
+親は原則として、子へ処理を命令するためのAction Caseを追加しない。親Viewから`store.send(.child(...))`を呼んだり、親Reducerから`.send(.child(...))`を返したりしない。
 
 親が子に関係する処理を所有する場合は、次の順序で責務を見直す。
 
@@ -196,9 +198,11 @@ case .destination(.presented(.editor(.delegate(.didSave)))):
 2. 親だけが所有するその他の処理なら、親のState、Action、Dependencyへ置く。
 3. 子だけが所有する処理なら、子のViewまたはEffectから子Actionを送る。
 4. 親と子の両方から必要なら、Child Stateへ共有メソッドを抽出する。
-5. 子から親の判断が必要なら、意味のある`delegate`を送る。
+5. 一時的なChildが所有するEffectをChild破棄時に自動キャンセルする必要があるなら、親子境界、Effectの所有者、永続Child、明示的なキャンセルを再検討する。
+6. 再検討後もChildの自動キャンセル領域でEffectを開始する必要がある場合だけ、Parentから専用のTrigger Actionを送る。
+7. 子から親の判断が必要なら、意味のある`delegate`を送る。
 
-`case child(ChildFeature.Action)`はReducer合成に必要である。禁止するのはこのCase自体ではなく、親が具体的な子Actionを命令として構築、解釈することである。
+`case child(ChildFeature.Action)`はReducer合成に必要である。禁止するのはこのCase自体ではなく、親が具体的な子Actionを命令として構築、解釈することである。例外の条件と実装は[Child破棄に連動するEffectの例外](parent-child-communication.md#child破棄に連動するeffectの例外)を読む。
 
 ## テスト観点
 
@@ -207,8 +211,9 @@ case .destination(.presented(.editor(.delegate(.didSave)))):
 - `internal`の処理後に必要な`delegate`が送られる。
 - 子の結果を理由に親Stateを更新するのは、`delegate`受信時に限定する。
 - Parent Reducerだけで完結し、Child Reducerと共有しないChild Stateの同期更新は直接行い、親専用のChild Stateメソッドを追加していない。
-- ParentとChildから同じ処理を起動するときはChild Stateの共有メソッドを使い、具体的な子Actionを送っていない。
+- ParentとChildから同じ処理を起動するときはChild Stateの共有メソッドを使い、Child破棄時の自動キャンセルに限る例外を除いて具体的な子Actionを送っていない。
 - Effectを返す共有メソッドでは、そのActionが`child` Caseへmapされて子Reducerへ届く。
+- Parentから専用のTrigger Actionを送る例外では、Child ReducerがEffectを開始し、Child破棄時に自動キャンセルされる。
 - `binding`は`BindingReducer`で処理され、同じ変更をView Actionで重複実装していない。
 - キャンセル時に完了ActionやDelegateを誤送信しない。
 
@@ -217,7 +222,7 @@ case .destination(.presented(.editor(.delegate(.didSave)))):
 - Viewが`.internal(...)`または`.delegate(...)`を直接送っている。
 - API応答Actionが`view`に入っている。
 - 親が子のボタン名や通信応答を直接switchしている。
-- 親Viewまたは親Reducerが子へ具体的なActionを送っている。
+- 親Viewまたは親Reducerが、Child破棄時の自動キャンセル要件と設計見直しなしに、子へ具体的なActionを送っている。
 - Parent Reducerだけで完結し、Child Reducerと共有しないChild Stateの同期更新を、親専用のChild Stateメソッドへ抽出している。
 - 親が子Reducerの`reduce(into:action:)`を直接呼んでいる。
 - すべてのActionを`view`に入れ、Reducer合成のActionまで隠している。

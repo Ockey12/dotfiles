@@ -8,6 +8,7 @@
 - [ParentだけがChild Stateを更新する](#parentだけがchild-stateを更新する)
 - [同期処理を共有する](#同期処理を共有する)
 - [Effectを伴う処理を共有する](#effectを伴う処理を共有する)
+- [Child破棄に連動するEffectの例外](#child破棄に連動するeffectの例外)
 - [mapの役割](#mapの役割)
 - [直接Reducerを呼ばない](#直接reducerを呼ばない)
 - [Delegateとの関係](#delegateとの関係)
@@ -16,7 +17,7 @@
 
 ## 原則
 
-親Viewまたは親Reducerから、処理の命令として具体的な子Actionを送らない。
+親Viewまたは親Reducerから、処理の命令として具体的な子Actionを原則として送らない。
 
 ```swift
 // 採用しない
@@ -25,9 +26,11 @@ return .send(.child(.refresh))
 
 Parent Reducerの処理がChild Stateの同期更新だけで完結し、その更新をChild Reducerから行わない場合は、Parent Reducerで直接更新する。Child Stateへ親専用のメソッドを追加しない。
 
-親と子の両方から同じ処理を起動する必要がある場合は、その処理をChild Stateの`mutating`メソッドへ抽出する。同期的な状態更新はメソッド内で行い、後続のActionを発生させるEffectがあれば`Effect<ChildFeature.Action>`として返す。
+親と子の両方から同じ処理を起動する必要がある場合は、基本的にその処理をChild Stateの`mutating`メソッドへ抽出する。同期的な状態更新はメソッド内で行い、後続のActionを発生させるEffectがあれば`Effect<ChildFeature.Action>`として返す。
 
 親は返されたEffectを`.map { .child($0) }`で親Actionへ持ち上げる。親が知るのは共有メソッドとReducer合成用の`child` Caseだけであり、具体的な子Action Caseではない。
+
+例外として、一時的なChildが所有するEffectをChild破棄時に自動キャンセルする必要がある場合は、設計を再検討した上で、Parentから専用のTrigger Actionを送ってよい。ParentからChild Stateのメソッドを呼んで返したEffectはParent側のEffectとなり、Child破棄時の自動キャンセル領域には入らないためである。この例外は親子間の命令を一般化するものではない。
 
 ## 送信を避ける理由
 
@@ -50,7 +53,8 @@ Discussion #1952でTCAのメンテナは、親が子Actionを送る2つの形を
 | 親だけが所有するその他の処理 | 親のState、Action、Dependency |
 | 子だけが所有する処理 | 子のView ActionまたはEffect応答 |
 | Child ReducerとParent Reducerが同じ更新または処理を行う | Child Stateの共有メソッド |
-| ParentからChildが所有するEffectを起動する処理 | Effectを返すChild Stateのメソッド |
+| ParentからEffectを起動し、Parent側の寿命または明示的なキャンセルで管理する処理 | Effectを返すChild Stateのメソッド |
+| 一時的なChildが所有し、Child破棄時に自動キャンセルするEffect | 設計を再検討した後、ParentからChildの専用Trigger Actionを送る例外 |
 | 子から親の判断を求める通知 | 子の`delegate` |
 
 共有メソッドへ抽出しても責務が不自然なら、処理の所有者が子ではない可能性がある。複数Featureにまたがる処理は、共通の親FeatureまたはDependencyへ引き上げる。
@@ -188,6 +192,54 @@ struct ParentFeature {
 
 サンプルの待機処理はDependencyを使う最小例である。実際の通信ではAPI ClientなどのDependencyを使い、成功と失敗を子の`internal` Actionへ戻す。
 
+このサンプルのChildは通常の`Scope`で常に存在する。Parentから`state.child.refresh()`を呼んでも、Childだけが破棄される境界はない。Optional、Presentation、`forEach`、Stack上の一時的なChildでは、次の例外を確認する。
+
+## Child破棄に連動するEffectの例外
+
+Parent ReducerからChild Stateのメソッドを呼ぶと、メソッドが`Child.State`に定義されていても、返されたEffectはParent ReducerのEffectになる。
+
+```swift
+case .view(.onTappedRefreshChildButton):
+  guard state.child != nil else { return .none }
+  return state.child!.refresh().map { .child(.presented($0)) }
+```
+
+PresentationReducerから見ると、このEffectはChild Reducerが返す`destinationEffects`ではなく、Parent Reducerが返す`baseEffects`である。`.map`は出力Actionの型を変換するだけであり、EffectをChildのライフサイクルへ移さない。そのため、Childが`nil`になっても、TCAによるChild破棄時の自動キャンセルは働かない。
+
+この実装を必要とした時点で、次を順に再検討する。
+
+1. 通信や監視は本当にChildが所有し、画面を閉じたら停止してよいか。
+2. Parentまたは永続FeatureがEffectと結果を所有し、Childは状態を表示するだけにできないか。
+3. Child StateをParentの通常プロパティとして保持し、Destinationには表示マーカーだけを置くべきではないか。
+4. Parent側でChildのIdentityを含むCancellation IDを使い、破棄時の`.cancel(id:)`とResponse受信時のIdentity照合を明示する方が自然ではないか。
+5. ParentからChildを命令したくなること自体が、親子境界、Feature分割、または共有データの所有者の誤りを示していないか。
+
+再検討後も、次の条件をすべて満たす場合だけ例外を使う。
+
+- Effectは一時的なChildが所有する。
+- Childが破棄されたらEffectも停止する。
+- ParentとChildの両方から同じ開始処理が必要である。
+- Parent所有、永続Child、または明示的なキャンセルより、Childの自動キャンセル領域へ入れる方が責務を正しく表す。
+
+TCA 1では、Parentから専用のTrigger Actionを即座に送信し、Child ReducerからEffectを返す。
+
+```swift
+// Parent Reducer
+case .view(.onTappedRefreshChildButton):
+  guard state.child != nil else { return .none }
+  return .send(.child(.presented(.refreshRequested)))
+
+// Child Reducer
+case .refreshRequested:
+  return state.refresh()
+```
+
+`.send`自体はParent Reducerが返すEffectである。送られたActionがStoreへ入り直し、PresentationReducer、`ifLet`、`forEach`、またはStack Reducerを経由してChild Reducerが返したEffectに、Child固有のキャンセル領域が付く。Childを破棄すると、このEffectが自動キャンセルされる。
+
+専用のTrigger Actionは、`refreshRequested`のように例外だと分かるトップレベルのCaseとし、子の`view`や`internal`を偽装しない。非公式の`Input`名前空間を追加する必要はない。Parentが通信を開始し、完了後にChildのResponse Actionだけを送っても、通信はParent側のEffectのままであり、この例外の目的を満たさない。
+
+送信時にChildが存在することを確認する。同じParent ActionでChildを破棄せず、遅延後にTrigger Actionを送らない。Childが存在しない状態でActionが届くと、TCAはロジック上の問題として報告する。
+
 ## mapの役割
 
 `state.child.refresh()`の戻り値は`Effect<ChildFeature.Action>`であり、親Reducerは`Effect<ParentFeature.Action>`を返す必要がある。`.map { .child($0) }`は、Effectが将来出力する子Actionを親Actionの`child` Caseで包む。
@@ -202,6 +254,8 @@ Child Stateの同期更新
 ```
 
 これは`.send(.child(.refresh))`とは異なる。親は処理開始用の子Actionを構築せず、共有メソッドが生成したEffectの出力型を合成境界へ変換しているだけである。
+
+ただし、`.map`はEffectのキャンセル領域をChildへ移さない。一時的なChildの破棄時にEffectを自動キャンセルする要件では、明示的なCancellation IDを使うか、前節の専用Trigger Actionの例外を判断する。
 
 Discussion #1952の例は`.map(Action.child)`を使う。Swift 6のStrict Concurrencyではenum caseを関数参照として渡すとSendable警告が発生し得るため、この資料ではTCA 1.15 Migration Guideに従って`.map { .child($0) }`を使う。
 
@@ -241,6 +295,8 @@ Childで起きた公開すべき結果 → Child.delegate → Parent Reducer
 - 親Reducerは具体的な子の`view`または`internal` Actionを生成、解釈しない。
 - Effect完了後に子Stateが期待どおり更新される。
 - キャンセル要件がある場合は、共有メソッドが返すEffectへ明示的なCancellation IDを付け、所有者から停止できる。
+- 専用Trigger Actionの例外では、Parent ActionからChild ReducerがEffectを開始し、Child破棄時に自動キャンセルされる。
+- 専用Trigger Actionを送った後にChildを破棄しても、存在しないChildへのResponse Actionが届かない。
 
 Presentationを閉じた後もEffectを継続する要件では、共有メソッドだけでなくChild StateとReducerの寿命も確認する。[Destinationパターン](destination-pattern.md)に従い、Child Stateを親の通常プロパティとして保持する。
 
@@ -250,4 +306,6 @@ Presentationを閉じた後もEffectを継続する要件では、共有メソ�
 - Reducer直接呼び出しの非推奨メッセージ: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Reducer.swift
 - TCA 1.25 Migration Guide: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Documentation.docc/Articles/MigrationGuides/MigratingTo1.25.md
 - enum caseの関数参照に関するTCA 1.15 Migration Guide: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Documentation.docc/Articles/MigrationGuides/MigratingTo1.15.md
+- ParentからChild Actionを送る方法と性能上の注意: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Documentation.docc/Articles/Performance.md#Sharing-logic-in-child-features
+- Presentation内のChild EffectとParent Effectの分離: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Reducer/Reducers/PresentationReducer.swift
 - Discussion #1952を解説する日本語記事: https://zenn.dev/kalupas226/articles/87b1f7b245915c
