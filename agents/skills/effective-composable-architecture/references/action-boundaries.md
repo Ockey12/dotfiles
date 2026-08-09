@@ -5,11 +5,10 @@
 - [位置づけ](#位置づけ)
 - [分類手順](#分類手順)
 - [最小構造](#最小構造)
-- [Featureでの変換](#featureでの変換)
-- [Viewから送るAction](#viewから送るaction)
-- [Parent FeatureとChild Featureの境界](#parent-featureとchild-featureの境界)
-- [Parent FeatureがChild FeatureのActionを使う条件](#parent-featureがchild-featureのactionを使う条件)
-- [trigger境界](#trigger境界)
+- [View Action](#view-action)
+- [Trigger Action](#trigger-action)
+- [Internal Action](#internal-action)
+- [Delegate Action](#delegate-action)
 - [テスト観点](#テスト観点)
 - [レビュー時の問題例](#レビュー時の問題例)
 - [一次ソース](#一次ソース)
@@ -24,10 +23,10 @@ Action Boundariesは、Actionを発生元と通知先で分ける設計規約で
 
 Action境界の分類とコード上の並びには、次の固定順序を使う。
 
-1. ViewがBinding以外のユーザーの操作またはライフサイクルを伝える場合、`view`にする。
-2. 別Featureが、このFeatureの所有する処理を起動する場合、`trigger`の候補にする。採用可否は[Parent FeatureがChild FeatureのActionを使う条件](#parent-featureがchild-featureのactionを使う条件)で判断する。
-3. Effect、Dependency、タイマー、通知から戻る場合、`internal`にする。
-4. Child FeatureがParent FeatureへActionを通知する場合、`delegate`にする。
+1. ViewがBinding以外のユーザーの操作またはライフサイクルを伝える場合、`view`にする。詳細は[View Action](#view-action)で判断する。
+2. 別Featureが、このFeatureの所有する処理を起動する場合、`trigger`の候補にする。採用可否は[Trigger Action](#trigger-action)で判断する。
+3. Effect、Dependency、タイマー、通知から戻る場合、`internal`にする。詳細は[Internal Action](#internal-action)で判断する。
+4. Child FeatureがParent FeatureへActionを通知する場合、`delegate`にする。詳細は[Delegate Action](#delegate-action)で判断する。
 5. `BindingAction<State>`の場合、`binding`にする。
 
 Child Feature、Presentation、Navigation Stackを合成するActionは上記5境界に含めず、専用Caseとして5境界の後に置く。Action Case、ネストした境界Action型、資料内の一覧、`Reduce`内の`switch`では、存在する境界だけを抜き出して同じ順序を守る。この順序は可読性の規約であり、Featureの実行優先度を表さない。
@@ -130,20 +129,13 @@ struct EditorFeature {
 
 `@Reducer`はトップレベルの`Action`へCase Path対応を生成する。ネストした`View`、`Trigger`、`Internal`、`Delegate`には`@CasePathable`を明示する。そうすることで、ネストしたActionをCasePathで記述できるようになる。
 
-## Featureでの変換
+## View Action
 
-Featureは境界を越える箇所を明示する。
+`view`は、ViewがBinding以外のユーザー操作またはライフサイクルを同じFeatureへ伝える場合に使う。ボタンのタップ、タスクの開始、画面の表示など、Viewで発生した事実やユーザーの意図を表す。Effectの応答、別Featureからの開始要求、Parent Featureへの通知には使わない。
 
-Viewから始まる処理では、必要な境界だけを次の順序で変換する。
+フォーム入力のような双方向更新は`view`ではなく`binding`にする。
 
-1. `view`を処理し、同期的なState更新またはEffectを開始する。
-2. Effectを開始した場合、その値と失敗でStateを直接変更せず、`internal`としてFeatureへ戻す。
-3. `internal`を処理し、Stateを更新する。
-4. Parent Featureへ公開すべき結果がある場合、`delegate`を送る。Child Feature側で先に確定すべきStateがあれば、送信前に更新する。
-
-Parent Feature起点の処理は[Parent FeatureがChild FeatureのActionを使う条件](#parent-featureがchild-featureのactionを使う条件)で所有者を決める。`trigger`を採用した場合の実装は[trigger境界](#trigger境界)に従う。
-
-## Viewから送るAction
+具体的には、Featureの`Action`を`ViewAction`へ準拠させ、View用Actionをネストした`View`へ置く。Viewには`@ViewAction(for:)`を付け、生成される`send`でView用Actionを送る。
 
 ```swift
 import ComposableArchitecture
@@ -170,49 +162,24 @@ Viewから発生させるActionは`view`と`binding`に限定し、`trigger`、`
 フォーム入力は`BindableAction`と`BindingReducer`を使い、通常は`$store`からBindingを作る。状態から導出できるBindingのために`Binding(get:set:)`を手書きしない。
 
 `@ViewAction`の診断は境界違反を見つける補助である。マクロを付けただけで内部Actionがアクセス不能になるわけではない。
-`ViewAction`は`Action`の中からView用Actionの型を特定する。`@ViewAction(for:)`はViewへ`send`を提供し、View内での直接的な`store.send`へ診断を出す。内部ActionをSwiftの型システムで完全に非公開にする仕組みではない。
+`ViewAction`は`Action`の中からView用Actionの型を特定する。`@ViewAction(for:)`はViewへ`send`を提供し、View内での直接的な`store.send`に警告を出す。内部ActionをSwiftの型システムで完全に非公開にする仕組みではない。
 
-## Parent FeatureとChild Featureの境界
+## Trigger Action
 
-Child FeatureはParent Featureへの通知を`delegate`として公開する。Parent Featureは`delegate`だけを解釈し、Child Featureの`view`、`trigger`、`internal`、`binding`に対する処理は実装しない。
-
-```swift
-// Parent Feature
-case .child(.delegate(.didSave)):
-  state.lastSavedAt = clock.now
-  return .none
-```
-
-Child Featureは自身のDelegate Actionに対する処理を行わない。Delegate Actionの`.send`は、Parent Featureに通知するためだけに行う。
-
-また、DelegateはInternalの処理の後にしか`.send`できない、というわけではない。Child Featureを`@Presents`でSheetとして表示する場合、閉じるボタンをタップした際の処理をParent Featureに委譲したい場合がある。処理の内容がEffectでの通信なら、完了する前にOptionalなChild FeatureのStateが破棄され、Effectもキャンセルされるため、Parent Featureが最後まで行う方が適している。そのような場合は、`Child.Action.View.onTappedCloseButton`から`Child.Action.Delegate.onTappedCloseButton`を`.send`する。
-
-Presentation内のChild Featureから届くDelegateは次の形になる。
-
-```swift
-case .destination(.presented(.editor(.delegate(.didSave)))):
-  state.destination = nil
-  return .none
-```
-
-Parent Featureは、Child FeatureのDelegate Actionのうち、自身が処理したいcaseだけを`case .child(.delegate(.onTappedCloseButton))`のように取り出す。`case let .child(.delegate(delegateAction))`のように取り出して`switch delegateAction`で網羅する必要はない。こうすることで、Delegate Actionの各caseのシンボル検索を行った際に、実際に処理を行うFeatureを見つけやすくなったり、逆にどのFeatureからも使われていないcaseを見つけやすくなったりする。
-
-## Parent FeatureがChild FeatureのActionを使う条件
-
-Parent Featureは原則として、Child Featureへ処理を命令するためのAction Caseを構築しない。次の順序で責務を見直す。
+`trigger`は、別Featureが、このFeatureの所有するEffectを外部から起動する必要がある場合だけ使う。Parent Featureは原則として、Child Featureへ処理を命令するためのAction Caseを構築しないため、定義する前に次の順序で責務を見直す。
 
 1. Parent FeatureだけがChild FeatureのStateを同期更新するなら、Parent Featureで直接更新する。この更新だけを隠すParent Feature専用メソッドをChild FeatureのStateへ追加しない。
 2. Parent Featureだけが所有する処理なら、Parent FeatureのState、Action、Dependencyへ置く。
 3. Child Featureだけが所有し、外部からの起動が不要なら、Child Feature内から開始する。
 4. Parent FeatureとChild Featureが同じ同期更新を行うなら、Child FeatureのStateの`mutating`メソッドを共有する。このメソッドはEffectを返さず、Parent Featureで`Effect.map`しない。
 5. 複数Featureが別々にEffectを所有するなら、Dependencyの非同期APIを共有し、各FeatureでEffectを構築する。
-6. Child Feature所有のEffectをParent Featureから起動する必要が残る場合だけ、TCA 1の`trigger`をParent Featureから送る。
+6. Child Feature所有のEffectをParent Featureから起動する必要が残る場合だけ、TCA 1の`trigger`を候補にする。
 
-`case child(ChildFeature.Action)`はFeature合成に必要である。禁止するのはcase自体ではなく、Parent FeatureがChild Featureの`view`、`internal`、`delegate`、`binding`を`.send`することである。完全な実装とキャンセル条件は[Parent FeatureからChild FeatureへActionを送らない](parent-child-communication.md)を読む。
+この見直しを行っても、処理、応答後のState更新、Cancellation IDをChild Featureが所有し、Child Feature自身とParent Featureの両方に低頻度で意味のある開始理由が残る場合に`trigger`を採用する。Optional、Presentation、Collection、Stack上のChild Featureでは、送信時に対象が存在することも必要になる。詳細な選択基準、実装、キャンセル条件は[Parent FeatureからChild FeatureへActionを送らない](parent-child-communication.md)を読む。
 
-## trigger境界
+`case child(ChildFeature.Action)`はFeature合成に必要である。禁止するのはcase自体ではなく、Parent FeatureがChild Featureの`view`、`internal`、`delegate`、`binding`を`.send`することである。
 
-前節の責務見直しによって`trigger`を採用した場合、Actionのトップレベルに専用名前空間`Trigger`を置く。
+`trigger`を採用した場合、Actionのトップレベルに専用名前空間`Trigger`を置く。
 
 ```swift
 enum Action: ViewAction {
@@ -255,6 +222,44 @@ case let .trigger(triggerAction):
 
 一方からもう一方を`.send`すると、共有ロジックのためだけに余分なActionを処理し、テストにも中継Actionが現れるため避ける。また、`.send`は関数呼び出しよりも実行コストが高いため、ローカルヘルパー関数で実現できるなら`.send`は避ける。
 
+## Internal Action
+
+`internal`は、Effect、Dependency、タイマー、通知から値または失敗が戻り、同じFeatureがその結果を解釈する場合に使う。`view`または`trigger`の処理中に完結する同期State更新では、別の`internal`を送らず、その場でStateを更新する。
+
+Effectの値または失敗をFeatureが扱う場合は、`internal`としてFeatureへ戻す。`internal`を処理する際にStateを更新し、Parent Featureへ公開すべき結果があれば、その後に`delegate`を送る。Child Feature側で確定すべきStateは、`delegate`の送信前に更新する。
+
+[最小構造](#最小構造)では、`view`と`trigger`の両方が`save(state:)`を呼び、Effectが`.internal(.saveFinished)`を送る。Featureは`saveFinished`を受け取って`isSaving`を更新し、保存完了をParent Featureへ公開する必要があるため、最後に`.delegate(.didSave)`を送る。
+
+ViewとParent FeatureはChild Featureの`internal`を送信または解釈しない。`internal`は同じFeature内の状態遷移に閉じる。
+
+## Delegate Action
+
+`delegate`は、Child Featureで起きた結果やユーザーの意図について、Parent Featureが自身のState、Navigation、またはEffectを判断する必要がある場合に使う。結果がChild Feature内だけで完結する場合は定義しない。Parent Featureへ公開する意味を名前にし、Child Feature内部の通信応答やState更新をそのまま公開しない。
+
+Child FeatureはParent Featureへの通知を`delegate`として送る。Parent Featureは`delegate`だけを解釈し、Child Featureの`view`、`trigger`、`internal`、`binding`に対する処理は実装しない。
+
+```swift
+// Parent Feature
+case .child(.delegate(.didSave)):
+  state.lastSavedAt = clock.now
+  return .none
+```
+
+Child Featureは自身のDelegate Actionに対する処理を行わない。Delegate Actionの`.send`は、Parent Featureに通知するためだけに行う。
+
+Delegate ActionはInternal Actionの処理後にだけ送るものではない。Child Featureを`@Presents`でSheetとして表示し、閉じるボタンから始まる通信をDismiss後も継続する場合、Child FeatureのView ActionからDelegate Actionを送り、Parent Featureが通信を所有する。Child Featureが通信を開始すると、完了前にOptionalなStateが破棄され、Effectもキャンセルされるためである。
+
+Presentation内のChild Featureから届くDelegate Actionは次の形になる。
+
+```swift
+case .destination(.presented(.editor(.delegate(.onTappedCloseButton)))):
+  // Child Stateの値を使って通信や保存などを行う
+  state.destination = nil
+  return .none
+```
+
+Parent Featureは、Child FeatureのDelegate Actionのうち、自身が処理したいcaseだけを`case .child(.delegate(.onTappedCloseButton))`のように取り出す。`case let .child(.delegate(delegateAction))`のように取り出して`switch delegateAction`で網羅する必要はない。こうすることで、Delegate Actionの各caseのシンボル検索を行った際に、実際に処理を行うFeatureを見つけやすくなったり、逆にどのFeatureからも使われていないcaseを見つけやすくなったりする。
+
 ## テスト観点
 
 - View Actionが期待するStateだけを変更する。
@@ -278,7 +283,7 @@ case let .trigger(triggerAction):
 - API応答Actionが`view`または`trigger`に入っている。
 - Action Case、ネストした境界Action型、`Reduce`の外側の`switch`が`view`、`trigger`、`internal`、`delegate`、`binding`の順になっていない。
 - `case .trigger(.refresh)`のように、トップレベルActionと具体Caseを同じパターンで処理している。
-- Parent FeatureがChild Featureのボタン名、通信応答、Bindingを送信または解釈している。
+- Parent FeatureがChild Featureの`view`、通信応答、Bindingを送信したり対応する処理を実装したりしている。
 - 高頻度の状態同期にParent FeatureからChild Featureへの`trigger`送信を使っている。
 - Parent Featureだけの同期更新を、Parent Feature専用のChild FeatureのStateメソッドへ抽出している。
 - Child FeatureのStateのメソッドがEffectを返し、Parent Featureで`Effect.map`している。
