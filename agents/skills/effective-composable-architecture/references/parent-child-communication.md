@@ -1,311 +1,509 @@
-# 親から子Actionを送らない
+# Child FeatureへActionを送りたい場合の選択肢と判断基準
 
 ## 目次
 
-- [原則](#原則)
-- [送信を避ける理由](#送信を避ける理由)
-- [選択基準](#選択基準)
-- [ParentだけがChild Stateを更新する](#parentだけがchild-stateを更新する)
-- [同期処理を共有する](#同期処理を共有する)
-- [Effectを伴う処理を共有する](#effectを伴う処理を共有する)
-- [Child破棄に連動するEffectの例外](#child破棄に連動するeffectの例外)
-- [mapの役割](#mapの役割)
-- [直接Reducerを呼ばない](#直接reducerを呼ばない)
+- [位置づけ](#位置づけ)
+- [選択肢と判断基準](#選択肢と判断基準)
+- [同期State更新の実装](#同期state更新の実装)
+- [TCA 1のtrigger境界](#tca-1のtrigger境界)
+- [ビルド済みサンプル](#ビルド済みサンプル)
+- [キャンセル領域の根拠](#キャンセル領域の根拠)
+- [cancelInFlightを付ける場所](#cancelinflightを付ける場所)
+- [通常のScopeで使う場合](#通常のscopeで使う場合)
+- [Effect.mapを新規設計で使わない](#effectmapを新規設計で使わない)
+- [性能と設計の判断](#性能と設計の判断)
+- [Featureのreduceを直接呼ばない](#featureのreduceを直接呼ばない)
 - [Delegateとの関係](#delegateとの関係)
+- [TCA 2への移行](#tca-2への移行)
 - [テスト観点](#テスト観点)
 - [参照資料](#参照資料)
 
-## 原則
+## 位置づけ
 
-親Viewまたは親Reducerから、処理の命令として具体的な子Actionを原則として送らない。
+Parent FeatureからChild FeatureのStateを変更したい、またはChild Featureの処理を起動したい場合は、具体的なChild FeatureのActionをすぐに構築せず、先にState、Effect、Dependencyの所有者を決める。この資料では、直接のState更新、同期処理の共有、Effectの所有者の変更、Dependencyの共有、TCA 1の`trigger`を比較し、要件に合う入力方法を選ぶ。
+
+Child Featureの`view`や`internal`を処理の命令として流用しない。
 
 ```swift
 // 採用しない
-return .send(.child(.refresh))
+return .send(.child(.view(.onTappedRefreshButton)))
+return .send(.child(.internal(.refreshResponse(result))))
 ```
 
-Parent Reducerの処理がChild Stateの同期更新だけで完結し、その更新をChild Reducerから行わない場合は、Parent Reducerで直接更新する。Child Stateへ親専用のメソッドを追加しない。
+外部からChild Featureの処理を起動する必要がある場合も、先に[選択肢と判断基準](#選択肢と判断基準)で処理とEffectの所有者を決める。Action送信が要件に合う場合だけ`trigger`を選び、実装は[TCA 1のtrigger境界](#tca-1のtrigger境界)に従う。
 
-親と子の両方から同じ処理を起動する必要がある場合は、基本的にその処理をChild Stateの`mutating`メソッドへ抽出する。同期的な状態更新はメソッド内で行い、後続のActionを発生させるEffectがあれば`Effect<ChildFeature.Action>`として返す。
+## 選択肢と判断基準
 
-親は返されたEffectを`.map { .child($0) }`で親Actionへ持ち上げる。親が知るのは共有メソッドとReducer合成用の`child` Caseだけであり、具体的な子Action Caseではない。
+| 状況 | 選択肢 | Child FeatureのAction送信 |
+| --- | --- | --- |
+| Parent Featureだけが行うChild FeatureのStateの同期更新 | Parent Featureから直接更新 | 送らない |
+| Child FeatureとParent Featureが同じ同期更新を行う | Child FeatureのStateの`mutating`メソッド | 送らない |
+| Parent Featureだけが所有する非同期処理 | Parent FeatureのState、Action、Dependency、Effect | 送らない |
+| Child Featureだけが所有し、外部起動が不要な非同期処理 | Child Featureの`view`または内部処理 | 送らない |
+| 複数Featureが別々にEffectを所有し、同じ処理だけを使う | Dependencyの非同期APIまたは純粋関数を共有 | 送らない |
+| Child Feature所有の非同期処理をChild FeatureとParent Featureの両方から起動する | `trigger`候補として下記条件を確認 | 条件を満たす場合だけ送る |
 
-例外として、一時的なChildが所有するEffectをChild破棄時に自動キャンセルする必要がある場合は、設計を再検討した上で、Parentから専用のTrigger Actionを送ってよい。ParentからChild Stateのメソッドを呼んで返したEffectはParent側のEffectとなり、Child破棄時の自動キャンセル領域には入らないためである。この例外は親子間の命令を一般化するものではない。
+`trigger`を選ぶ前に次を確認する。
 
-## 送信を避ける理由
+1. 処理、応答後の状態更新、Cancellation IDをChild Featureが所有するか。
+2. Child Feature自身とParent Featureの両方に開始理由があるか。
+3. Parent Feature所有、永続Feature、共有データの所有者への引き上げより、Child Featureへ置く方が自然か。
+4. スクロール、ジェスチャー、文字入力、フレーム更新、多数のChild Featureへの細かなAction送信などの高頻度処理ではなく、通信や再読み込みなど意味のある低頻度処理か。
+5. Optional、Presentation、Collection、Stack上のChild Featureでは、送信時に対象が存在し、Actionを即座に送れるか。
 
-TCAのActionは、Viewでの操作、Dependencyからの応答、子から親への通知など、システム内で起きた出来事を表す。Reducerのメソッド名や、別Featureから実行する命令として扱わない。
+すべての条件を満たす場合に限り、TCA 1では`Action.trigger(Trigger)`をChild Featureの外部入力境界として定義し、Parent FeatureからそのCaseだけを送る。この`trigger`はTCA 1の公式機能ではなく、TCA 2の公式`@Trigger`への移行意図を表すローカル規約である。条件を説明できない場合は、表に戻ってActionを送らない選択肢を選ぶ。
 
-親が`.child(.refresh)`を作る設計には次の問題がある。
+Child FeatureからParent Featureへ判断を求める通知は逆向きの境界である。[Delegateとの関係](#delegateとの関係)で扱う。
 
-- 子Actionの具体的なCaseが親のAPIになる。
-- 子の処理手順を変えるだけで、親Reducerと親のテストも変更しやすくなる。
-- View由来でもEffect由来でもないActionが、親から子への命令として追加される。
-- 子のAction境界を分けても、親がその内部Caseへ依存すれば境界が崩れる。
+## 同期State更新の実装
 
-Discussion #1952でTCAのメンテナは、親が子Actionを送る2つの形をどちらも推奨せず、Child Stateのメソッドへ処理を抽出し、そのEffectを親Actionへmapする形を示している。
+この節では、[選択肢と判断基準](#選択肢と判断基準)に示した2つの同期更新パターンを実装する。
 
-## 選択基準
-
-| 要件 | 置き場所 |
-| --- | --- |
-| Parent Reducerだけで完結し、Child Reducerと共有しないChild Stateの同期更新 | Parent ReducerからChild Stateを直接更新 |
-| 親だけが所有するその他の処理 | 親のState、Action、Dependency |
-| 子だけが所有する処理 | 子のView ActionまたはEffect応答 |
-| Child ReducerとParent Reducerが同じ更新または処理を行う | Child Stateの共有メソッド |
-| ParentからEffectを起動し、Parent側の寿命または明示的なキャンセルで管理する処理 | Effectを返すChild Stateのメソッド |
-| 一時的なChildが所有し、Child破棄時に自動キャンセルするEffect | 設計を再検討した後、ParentからChildの専用Trigger Actionを送る例外 |
-| 子から親の判断を求める通知 | 子の`delegate` |
-
-共有メソッドへ抽出しても責務が不自然なら、処理の所有者が子ではない可能性がある。複数Featureにまたがる処理は、共通の親FeatureまたはDependencyへ引き上げる。
-
-## ParentだけがChild Stateを更新する
-
-Parentが受け取ったEffectの応答や観測値によってChild Stateを同期的に更新するだけで処理が完結し、Child Reducerから同じ更新を行わない場合は、Parent Reducerで直接更新する。
+### Parent Featureだけが更新する場合
 
 ```swift
-case let .internal(.childProgressUpdated(progress)):
-  state.child.progress = progress
-  return .none
+case let .internal(internalAction):
+  switch internalAction {
+  case let .childProgressUpdated(progress):
+    state.child.progress = progress
+    return .none
+}
 ```
 
-この代入だけを隠す`updateProgressFromParent(_:)`のようなメソッドをChild Stateへ追加しない。ChildがParentのActionやデータ取得手順を意識するAPIになり、状態更新の所有者が不明確になるためである。
+この代入だけを隠すParent Feature専用メソッドをChild FeatureのStateへ追加しない。
 
-## 同期処理を共有する
-
-Child ReducerとParent Reducerが同じ同期的な状態更新を行う場合は、Child Stateのメソッドへ抽出する。同期的な状態更新だけなら、Effectを返さない。
+### Parent FeatureとChild Featureが共有する場合
 
 ```swift
-extension ChildFeature.State {
+extension Child.State {
   mutating func clearSelection() {
     selectedID = nil
   }
 }
 ```
 
-子Reducerと親Reducerのどちらからも同じメソッドを呼べる。
-
 ```swift
-case .view(.onTappedClearButton):
-  state.clearSelection()
-  return .none
+// Child Feature
+case let .view(viewAction):
+  switch viewAction {
+  case .onTappedClearButton:
+    state.clearSelection()
+    return .none
+  }
+
+// Parent Feature
+case let .view(viewAction):
+  switch viewAction {
+  case .onTappedClearChildSelectionButton:
+    state.child.clearSelection()
+    return .none
+}
 ```
 
+共有する`mutating`メソッドは同期State更新だけを行い、`Effect`を返さない。非同期処理まで共有する場合は[選択肢と判断基準](#選択肢と判断基準)に戻って処理の所有者を決め直す。
+
+## TCA 1のtrigger境界
+
+[選択肢と判断基準](#選択肢と判断基準)で採用した`Action.trigger(Trigger)`の最小構造は次のとおりである。
+
 ```swift
-case .view(.onTappedClearChildSelectionButton):
-  state.child.clearSelection()
-  return .none
+enum Action: ViewAction {
+  case view(View)
+  case trigger(Trigger)
+  case `internal`(Internal)
+
+  @CasePathable
+  enum View {
+    case onAppear
+  }
+
+  @CasePathable
+  enum Trigger {
+    case refresh
+  }
+
+  @CasePathable
+  enum Internal {
+    case refreshFinished
+  }
+}
 ```
 
-常に`.none`しか返さないメソッドを`Effect`型にしない。状態不変条件をメソッドへ集約し、呼び出し元に同じ更新を重複させない。
+Child Feature自身の開始ActionとParent Featureからの`trigger`は、それぞれのAssociated Valueを取り出してから内側で`switch`し、同じFeatureローカルヘルパーを直接呼ぶ。
 
-## Effectを伴う処理を共有する
+```swift
+case let .view(viewAction):
+  switch viewAction {
+  case .onAppear:
+    return refresh(state: &state)
+  }
 
-次の例では、更新処理をChild Stateの`refresh()`へ抽出する。子ReducerはView Actionから呼び、親Reducerは親自身のView Actionから同じ処理を呼ぶ。
+case let .trigger(triggerAction):
+  switch triggerAction {
+  case .refresh:
+    return refresh(state: &state)
+  }
+```
+
+次の中継は行わない。
+
+```swift
+// 採用しない
+case let .view(viewAction):
+  switch viewAction {
+  case .onAppear:
+    return .send(.trigger(.refresh))
+  }
+```
+
+中継ActionはStoreを余分に通り、TestStoreにも実装詳細として現れる。Featureローカルヘルパーなら、実処理の実装、状態遷移、Cancellation IDを1か所へ集約できる。
+
+## ビルド済みサンプル
+
+次のコードは、前節の`trigger`境界をOptionalなDestinationへ適用したサンプルである。TCA 1.26.0、Swift 6.2、iOS 26.4 Simulator向けにビルド済みである。
 
 ```swift
 import ComposableArchitecture
 
+struct Content: Identifiable, Sendable {
+    let id: String
+}
+
+@DependencyClient
+struct ContentRepository: Sendable {
+    var getAllContents: @Sendable () async throws -> [Content]
+}
+
+extension ContentRepository: DependencyKey {
+    static var liveValue: Self {
+        .init(getAllContents: { [Content(id: "sample")] })
+    }
+}
+
+extension DependencyValues {
+    var contentRepository: ContentRepository {
+        get { self[ContentRepository.self] }
+        set { self[ContentRepository.self] = newValue }
+    }
+}
+
 @Reducer
-struct ChildFeature {
-  @ObservableState
-  struct State: Equatable {
-    var isRefreshing = false
-
-    mutating func refresh() -> Effect<ChildFeature.Action> {
-      @Dependency(\.continuousClock) var clock
-
-      isRefreshing = true
-      return .run { send in
-        try await clock.sleep(for: .seconds(1))
-        await send(.internal(.refreshFinished))
-      }
-    }
-  }
-
-  enum Action: ViewAction {
-    case view(View)
-    case `internal`(Internal)
-
-    @CasePathable
-    enum View {
-      case onTappedRefreshButton
+struct Child {
+    @ObservableState
+    struct State {
+        var isRefreshing = false
+        var list: IdentifiedArrayOf<Content> = []
     }
 
-    enum Internal {
-      case refreshFinished
-    }
-  }
+    enum Action: ViewAction {
+        case view(View)
+        case trigger(Trigger)
+        case `internal`(Internal)
 
-  var body: some ReducerOf<Self> {
-    Reduce { state, action in
-      switch action {
-      case .view(.onTappedRefreshButton):
-        return state.refresh()
+        @CasePathable
+        enum View {
+            case onAppear
+        }
 
-      case .internal(.refreshFinished):
-        state.isRefreshing = false
-        return .none
-      }
+        @CasePathable
+        enum Trigger {
+            case refresh
+        }
+
+        @CasePathable
+        enum Internal {
+            case getAllContentsResponse(Result<[Content], any Error>)
+        }
     }
-  }
+
+    private enum CancelID {
+        case refresh
+    }
+
+    @Dependency(\.contentRepository) private var contentRepository
+
+    var body: some ReducerOf<Self> {
+        Reduce { state, action in
+            switch action {
+            case let .view(viewAction):
+                switch viewAction {
+                case .onAppear:
+                    return refresh(state: &state)
+                }
+
+            case let .trigger(triggerAction):
+                switch triggerAction {
+                case .refresh:
+                    return refresh(state: &state)
+                }
+
+            case let .internal(internalAction):
+                switch internalAction {
+                case let .getAllContentsResponse(result):
+                    state.isRefreshing = false
+                    if case let .success(contents) = result {
+                        state.list = .init(uniqueElements: contents)
+                    }
+                    return .none
+                }
+            }
+        }
+    }
+
+    private func refresh(state: inout State) -> Effect<Action> {
+        state.isRefreshing = true
+        return .run { send in
+            await send(.internal(.getAllContentsResponse(Result {
+                try await contentRepository.getAllContents()
+            })))
+        }
+        .cancellable(id: CancelID.refresh, cancelInFlight: true)
+    }
+}
+
+@Reducer
+struct Parent {
+    @Reducer
+    enum Destination {
+        case child(Child)
+    }
+
+    @ObservableState
+    struct State {
+        @Presents var destination: Destination.State?
+    }
+
+    enum Action: ViewAction {
+        case view(View)
+        case destination(PresentationAction<Destination.Action>)
+
+        @CasePathable
+        enum View {
+            case onTappedPresentChildButton
+            case onTappedReloadChildButton
+        }
+    }
+
+    var body: some ReducerOf<Self> {
+        Reduce { state, action in
+            switch action {
+            case let .view(viewAction):
+                switch viewAction {
+                case .onTappedPresentChildButton:
+                    state.destination = .child(Child.State())
+                    return .none
+
+                case .onTappedReloadChildButton:
+                    guard case .child = state.destination else {
+                        return .none
+                    }
+                    return .send(.destination(.presented(.child(.trigger(.refresh)))))
+                }
+
+            case .destination:
+                return .none
+            }
+        }
+        .ifLet(\.$destination, action: \.destination)
+    }
 }
 ```
 
-親は具体的な`ChildFeature.Action`を生成しない。共有メソッドが返すEffectの出力だけを、Reducer合成用のCaseへ変換する。
+このサンプルのParent Featureは、Child FeatureのDependency、Response Action、State更新、Cancellation IDを知らない。Parent Featureの`.send`とChild Featureの通信Effectが属するキャンセル領域は、次節で説明する。
+
+## キャンセル領域の根拠
+
+TCA 1.26.0の`PresentationReducer._reduce`は、Child Featureが返す`destinationEffects`とParent Featureが返す`baseEffects`を分ける。Presented ActionではChild Featureを実行し、そのEffectへChild Featureの`navigationIDPath`をDependencyとして設定してから`_cancellable(navigationIDPath:)`で包む。Parent FeatureのEffectは別の`baseEffects`として実行する。
+
+Parent FeatureからChild FeatureのStateのEffect返却メソッドを呼ぶ場合、そのEffectはParent Featureの戻り値なので`baseEffects`になる。将来出力するActionを`.map { .destination(...) }`しても、Action型を変換するだけで通信タスク自体はChild Featureの`destinationEffects`へ移らない。
+
+Parent FeatureからChild Featureの`trigger`を`.send`する場合、最初の`.send`はParent Featureの`baseEffects`、Child Featureが返す通信Effectは`destinationEffects`になる。この分離は次の処理順序で成立する。
+
+処理順序は次のとおりである。
+
+1. Parent FeatureのActionを処理する。
+2. Parent Featureの即時`Effect.send`を実行する。
+3. StoreへChild Featureの`trigger`が入り直す。
+4. `PresentationReducer`がPresented Actionを処理する。
+5. Child FeatureがActionを処理する。
+6. Child Featureが通信Effectを返す。
+7. Child Featureの`navigationIDPath`によって通信Effectが自動キャンセルの対象になる。
+
+TCA 1.26.0の`Effect.cancellable`も`navigationIDPath`をCancellation IDの一部として使う。そのため、Child Feature内で付けた`CancelID.refresh`は対象Child FeatureのIdentityへスコープされる。
+
+Destinationが`nil`になると、PresentationのChild FeatureのEffectは自動キャンセルされる。通常の`Scope`で常に存在するChild Featureには、このPresentation破棄境界はない。
+
+## cancelInFlightを付ける場所
+
+`cancelInFlight`は[ビルド済みサンプル](#ビルド済みサンプル)の`refresh(state:)`のように、Child Featureの実処理を返すEffectへ付ける。
+
+Cancellation IDをFeatureローカルヘルパーのEffectへ集約することで、開始元に関係なく、後から開始した再読み込みが同じChild Feature内の古い処理をキャンセルする。
+
+Parent Featureの即時`.send`へ付けない。
 
 ```swift
-@Reducer
-struct ParentFeature {
-  @ObservableState
-  struct State: Equatable {
-    var child = ChildFeature.State()
-  }
-
-  enum Action: ViewAction {
-    case child(ChildFeature.Action)
-    case view(View)
-
-    @CasePathable
-    enum View {
-      case onTappedRefreshChildButton
-    }
-  }
-
-  var body: some ReducerOf<Self> {
-    Scope(\.child, action: \.child) {
-      ChildFeature()
-    }
-
-    Reduce { state, action in
-      switch action {
-      case .view(.onTappedRefreshChildButton):
-        return state.child.refresh().map { .child($0) }
-
-      case .child:
-        return .none
-      }
-    }
-  }
-}
+// 採用しない。即時送信だけが対象で、Child Featureの通信は対象にならない
+return .send(.destination(.presented(.child(.trigger(.refresh)))))
+  .cancellable(id: ParentCancelID.refresh, cancelInFlight: true)
 ```
 
-サンプルの待機処理はDependencyを使う最小例である。実際の通信ではAPI ClientなどのDependencyを使い、成功と失敗を子の`internal` Actionへ戻す。
+`.send`はChild Featureの通信Effectを内包していない。Actionを受け取ったChild Featureが後から別のEffectを返すため、Parent Feature側のCancellation IDではその通信を管理できない。
 
-このサンプルのChildは通常の`Scope`で常に存在する。Parentから`state.child.refresh()`を呼んでも、Childだけが破棄される境界はない。Optional、Presentation、`forEach`、Stack上の一時的なChildでは、次の例外を確認する。
+## 通常のScopeで使う場合
 
-## Child破棄に連動するEffectの例外
-
-Parent ReducerからChild Stateのメソッドを呼ぶと、メソッドが`Child.State`に定義されていても、返されたEffectはParent ReducerのEffectになる。
+[選択肢と判断基準](#選択肢と判断基準)で`trigger`を採用したChild Featureを通常の`Scope`で合成する場合、Parent Featureは次の形でActionを送る。
 
 ```swift
-case .view(.onTappedRefreshChildButton):
-  guard state.child != nil else { return .none }
-  return state.child!.refresh().map { .child(.presented($0)) }
+case let .view(viewAction):
+  switch viewAction {
+  case .onTappedReloadChildButton:
+    return .send(.child(.trigger(.refresh)))
+  }
 ```
 
-PresentationReducerから見ると、このEffectはChild Reducerが返す`destinationEffects`ではなく、Parent Reducerが返す`baseEffects`である。`.map`は出力Actionの型を変換するだけであり、EffectをChildのライフサイクルへ移さない。そのため、Childが`nil`になっても、TCAによるChild破棄時の自動キャンセルは働かない。
+この構成のキャンセル領域は[キャンセル領域の根拠](#キャンセル領域の根拠)、共通のCancellation IDによる処理の置き換えは[cancelInFlightを付ける場所](#cancelinflightを付ける場所)に従う。
 
-この実装を必要とした時点で、次を順に再検討する。
+## Effect.mapを新規設計で使わない
 
-1. 通信や監視は本当にChildが所有し、画面を閉じたら停止してよいか。
-2. Parentまたは永続FeatureがEffectと結果を所有し、Childは状態を表示するだけにできないか。
-3. Child StateをParentの通常プロパティとして保持し、Destinationには表示マーカーだけを置くべきではないか。
-4. Parent側でChildのIdentityを含むCancellation IDを使い、破棄時の`.cancel(id:)`とResponse受信時のIdentity照合を明示する方が自然ではないか。
-5. ParentからChildを命令したくなること自体が、親子境界、Feature分割、または共有データの所有者の誤りを示していないか。
+Discussion #1952では、Child FeatureのStateの`mutating`メソッドが`Effect<Child.Action>`を返し、Parent Featureが`.map { .child($0) }`する共有方法が示された。2023年時点のTCA 1では、Parent Featureから具体的なChild FeatureのActionを送らずに共有する実務的な方法だった。
 
-再検討後も、次の条件をすべて満たす場合だけ例外を使う。
-
-- Effectは一時的なChildが所有する。
-- Childが破棄されたらEffectも停止する。
-- ParentとChildの両方から同じ開始処理が必要である。
-- Parent所有、永続Child、または明示的なキャンセルより、Childの自動キャンセル領域へ入れる方が責務を正しく表す。
-
-TCA 1では、Parentから専用のTrigger Actionを即座に送信し、Child ReducerからEffectを返す。
-
-```swift
-// Parent Reducer
-case .view(.onTappedRefreshChildButton):
-  guard state.child != nil else { return .none }
-  return .send(.child(.presented(.refreshRequested)))
-
-// Child Reducer
-case .refreshRequested:
-  return state.refresh()
-```
-
-`.send`自体はParent Reducerが返すEffectである。送られたActionがStoreへ入り直し、PresentationReducer、`ifLet`、`forEach`、またはStack Reducerを経由してChild Reducerが返したEffectに、Child固有のキャンセル領域が付く。Childを破棄すると、このEffectが自動キャンセルされる。
-
-専用のTrigger Actionは、`refreshRequested`のように例外だと分かるトップレベルのCaseとし、子の`view`や`internal`を偽装しない。非公式の`Input`名前空間を追加する必要はない。Parentが通信を開始し、完了後にChildのResponse Actionだけを送っても、通信はParent側のEffectのままであり、この例外の目的を満たさない。
-
-送信時にChildが存在することを確認する。同じParent ActionでChildを破棄せず、遅延後にTrigger Actionを送らない。Childが存在しない状態でActionが届くと、TCAはロジック上の問題として報告する。
-
-## mapの役割
-
-`state.child.refresh()`の戻り値は`Effect<ChildFeature.Action>`であり、親Reducerは`Effect<ParentFeature.Action>`を返す必要がある。`.map { .child($0) }`は、Effectが将来出力する子Actionを親Actionの`child` Caseで包む。
+一方、TCA 1.26.0の`Effect.map`には次の非推奨メッセージがある。
 
 ```text
-Child Stateの同期更新
-→ Effect<Child.Action>
-→ map
-→ Effect<Parent.Action.child>
-→ Scope
-→ Child Reducer
+Avoid transforming effects; construct them directly in a feature instead
 ```
 
-これは`.send(.child(.refresh))`とは異なる。親は処理開始用の子Actionを構築せず、共有メソッドが生成したEffectの出力型を合成境界へ変換しているだけである。
+通常構成では各OSへ`deprecated: 9999`が指定されるため警告は出ない。`ComposableArchitecture2Deprecations` traitを有効にすると実際の非推奨になる。TCA 1.25 Migration Guideの「Trait deprecations」は、TCA 2へ自分の予定で備えるための非推奨だと明記する。
 
-ただし、`.map`はEffectのキャンセル領域をChildへ移さない。一時的なChildの破棄時にEffectを自動キャンセルする要件では、明示的なCancellation IDを使うか、前節の専用Trigger Actionの例外を判断する。
+したがって、`Effect.map`の非推奨理由はTCA 2への移行準備である。Parent FeatureからChild FeatureへActionを送る処理の性能が改善されたことを理由に方針が変わった、と説明しない。Action送信の性能は[性能と設計の判断](#性能と設計の判断)で扱う。
 
-Discussion #1952の例は`.map(Action.child)`を使う。Swift 6のStrict Concurrencyではenum caseを関数参照として渡すとSendable警告が発生し得るため、この資料ではTCA 1.15 Migration Guideに従って`.map { .child($0) }`を使う。
+新規設計では[選択肢と判断基準](#選択肢と判断基準)に従って処理とEffectの所有者を決め、Child FeatureのEffectをParent FeatureのActionへ`map`する構造を標準にしない。
 
-## 直接Reducerを呼ばない
+既存の`Effect.map`を機械的にすべて置き換えない。対象TCAの固定バージョン、Effectの所有者、キャンセル要件を確認して段階的に移行する。
 
-共有ロジックを再利用するために、子Reducerを親から直接実行しない。
+## 性能と設計の判断
+
+Parent FeatureからChild FeatureへActionを送ると、Store、Case Path、Feature合成を経由してChild Featureをもう一度処理する。直接ヘルパーを呼ぶより追加コストがある。
+
+通信、データベース読み込み、明示的な再試行のような低頻度かつ意味のある処理では、通常、このAction送信コストより実処理のコストが大きい。ただし、これを性能保証として扱わない。計測が必要な箇所では計測する。
+
+`trigger`を許容できる頻度と所有権の条件は[選択肢と判断基準](#選択肢と判断基準)で判断する。
+
+## Featureのreduceを直接呼ばない
+
+共有ロジックを再利用するために、Child FeatureをParent Featureから直接実行しない。
 
 ```swift
 // 採用しない
-return ChildFeature()
-  .reduce(into: &state.child, action: .view(.onTappedRefreshButton))
+return Child()
+  .reduce(into: &state.child, action: .trigger(.refresh))
   .map { .child($0) }
 ```
 
-TCA 1.25 Migration Guideでは、`reduce(into:action:)`の直接呼び出しが非推奨になった。現行の`Reducer.swift`にある非推奨メッセージも、新しいActionをStoreへ送らない場合は、両Reducerから呼べるヘルパーを抽出するよう案内している。
+TCA 1.25 Migration Guideでは、`reduce(into:action:)`の直接呼び出しが非推奨になった。ActionはStoreへ送るか、両Featureから呼べるヘルパーへ同期ロジックを抽出する。
 
-同じメッセージは`.send(.child(...))`も機械的な移行手段として示す。しかし、親子で処理を共有する設計では親が具体的な子Actionへ依存するため、このスキルではChild Stateの共有メソッドを優先する。
+代替となる処理の配置は[選択肢と判断基準](#選択肢と判断基準)で決める。`trigger`を採用した場合は[TCA 1のtrigger境界](#tca-1のtrigger境界)に従ってStoreへActionを送り、Feature合成、Dependency、Presentation、Cancellationの経路を保つ。
 
 ## Delegateとの関係
 
-共有メソッドは親から子のロジックを起動する境界であり、`delegate`は子から親へ結果や判断材料を通知する境界である。役割を入れ替えない。
+`delegate`は、Child Featureで起きた公開すべき結果をParent Featureへ伝える出力境界である。Parent Featureは`.child(.delegate(...))`を解釈できるが、Child Featureへ`.delegate(...)`を送らない。
 
-```text
-Parent Action → Child Stateの共有メソッド
-Childで起きた公開すべき結果 → Child.delegate → Parent Reducer
+Parent FeatureからChild Featureへの入力は[選択肢と判断基準](#選択肢と判断基準)と[TCA 1のtrigger境界](#tca-1のtrigger境界)で扱う。`delegate`を外部入力に使ったり、`trigger`をParent Featureへの通知に使ったりしない。
+
+## TCA 2への移行
+
+TCA 2開発版では、Parent FeatureからChild FeatureのActionを送る代わりに公式`Trigger`を使う。TCA 1のローカル`trigger`境界は、次の対応で機械的に見つけやすい。
+
+| TCA 1 | TCA 2 |
+| --- | --- |
+| `case trigger(Trigger)` | 削除 |
+| `Trigger.refresh` | Child FeatureのStateの`@Trigger var refresh` |
+| Child Feature内部だけの共有Action | Featureローカルの`@Trigger private` |
+| Featureローカル`refresh(state:)` | `.onTrigger(store.refresh)` |
+| `.cancellable(id:cancelInFlight:)` | `@StoreTaskID`と`store.addTask(id:)` |
+| Parent Featureの`.send(.child(.trigger(.refresh)))` | `store.addTask { try store.child.refresh() }` |
+| Associated Valueを持つTrigger Case | `@Trigger<Value>` |
+
+最小形は次のとおりである。
+
+```swift
+import ComposableArchitecture2
+
+@Feature
+struct Child {
+  struct State {
+    @Trigger var refresh
+    @StoreTaskID var refreshTask
+  }
+
+  enum Action {
+    case onAppear
+  }
+
+  var body: some Feature {
+    Update { state, action in
+      switch action {
+      case .onAppear:
+        store.addTask {
+          try store.refresh()
+        }
+      }
+    }
+    .onTrigger(store.refresh) { state in
+      store.addTask(id: state.refreshTask) {
+        // Child Feature所有の非同期処理を行う
+      }
+    }
+  }
+}
 ```
 
-親は`.child(.delegate(...))`だけを解釈する。子の`view`や`internal`を親がswitchしない。
+Parent Featureは統合したChild FeatureのStoreのTriggerを非同期に呼ぶ。
+
+```swift
+case .onTappedReloadChildButton:
+  store.addTask {
+    try store.child.refresh()
+  }
+```
+
+同じ`@StoreTaskID`を同じ`onTrigger`位置の`store.addTask(id:)`へ渡すと、次のTrigger呼び出しが前の実行中Taskを置き換えてキャンセルする。1回のUpdate内で同じIDを使って複数Taskを追加する場合は並列に追跡されるため、TCA 1の`cancelInFlight`と完全に同じだと一般化せず、固定したTCA 2リビジョンのテストを確認する。
+
+TCA 2のPresentationや列挙型Storeのスコープ構文は開発中に変わり得る。移行時は固定リビジョンのTrigger資料、Lifecycle資料、テストを読み、TCA 1の構文を推測で移植しない。
 
 ## テスト観点
 
-- Parent Reducerだけで完結し、Child Reducerと共有しないChild Stateの同期更新では、Parent ActionからChild Stateを直接更新する。
-- Parent専用の代入を隠すためだけのChild Stateメソッドを追加していない。
-- 子のView Actionから共有メソッドを呼ぶと、同期Stateが更新される。
-- 親のActionから同じ共有メソッドを呼ぶと、同じ同期Stateが更新される。
-- 共有メソッドが返したEffectのActionは、親の`child` Caseを経て子Reducerへ届く。
-- 親Reducerは具体的な子の`view`または`internal` Actionを生成、解釈しない。
-- Effect完了後に子Stateが期待どおり更新される。
-- キャンセル要件がある場合は、共有メソッドが返すEffectへ明示的なCancellation IDを付け、所有者から停止できる。
-- 専用Trigger Actionの例外では、Parent ActionからChild ReducerがEffectを開始し、Child破棄時に自動キャンセルされる。
-- 専用Trigger Actionを送った後にChildを破棄しても、存在しないChildへのResponse Actionが届かない。
+Actionの宣言順と`Reduce`の分岐方法は[Action Boundaries](action-boundaries.md)で検証する。この資料では、選択した所有者、入力方法、Effectの寿命を検証する。
 
-Presentationを閉じた後もEffectを継続する要件では、共有メソッドだけでなくChild StateとReducerの寿命も確認する。[Destinationパターン](destination-pattern.md)に従い、Child Stateを親の通常プロパティとして保持する。
+- Parent Featureだけが行う同期State更新では、Parent FeatureのActionからChild FeatureのStateを直接更新する。
+- Parent FeatureとChild Featureが同じ同期State更新を行う場合は、どちらのActionからも同じ`mutating`メソッドを使って同じStateへ遷移する。
+- Parent Featureが所有するEffectの応答はParent Featureの`internal`へ戻り、Child FeatureへResponse Actionを送らない。
+- Dependencyを共有する場合は、各Featureが自身のEffectを構築し、応答を自身の`internal`へ戻す。
+- Child Featureの`view`からFeatureローカルヘルパーを呼ぶと、Child FeatureのStateが更新される。
+- Parent FeatureのActionからChild Featureの`trigger`を受信し、同じヘルパーが開始される。
+- 両方の開始経路で同じDependency結果をChild Featureの`internal`へ戻す。
+- `cancelInFlight`により、後から開始した処理が同じChild Feature内の古い処理をキャンセルする。
+- PresentationのChild Featureを破棄すると、Child FeatureのEffectがキャンセルされ、Response Actionが届かない。
+- Parent Featureの`.send`へCancellation IDを付けていない。
+- Trigger送信時にOptional、Presentation、Collection、Stack上の対象Child Featureが存在する。
+- Child Featureが存在しない状態や、別Identityへ遅延送信しない。
+- Parent FeatureはChild Featureの`view`、`internal`、`delegate`、`binding`を生成しない。
+- 同期State更新の共有に`trigger`または`Effect.map`を使わない。
+- TCA 2移行後はChild FeatureのActionの受信ではなく、Triggerによる観測可能なState変化を検証する。
+
+Presentationを閉じた後もEffectを継続する要件の寿命モデルは、[Destinationパターン](destination-pattern.md)で検証する。
 
 ## 参照資料
 
-- 親から子Actionを送る設計に関するTCA Discussion #1952: https://github.com/pointfreeco/swift-composable-architecture/discussions/1952
-- Reducer直接呼び出しの非推奨メッセージ: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Reducer.swift
-- TCA 1.25 Migration Guide: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Documentation.docc/Articles/MigrationGuides/MigratingTo1.25.md
-- enum caseの関数参照に関するTCA 1.15 Migration Guide: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Documentation.docc/Articles/MigrationGuides/MigratingTo1.15.md
-- ParentからChild Actionを送る方法と性能上の注意: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Documentation.docc/Articles/Performance.md#Sharing-logic-in-child-features
-- Presentation内のChild EffectとParent Effectの分離: https://github.com/pointfreeco/swift-composable-architecture/blob/main/Sources/ComposableArchitecture/Reducer/Reducers/PresentationReducer.swift
+- Parent FeatureからChild FeatureへActionを送る設計に関するTCA Discussion #1952: https://github.com/pointfreeco/swift-composable-architecture/discussions/1952
+- TCA 1.26.0の`Effect.map`: https://github.com/pointfreeco/swift-composable-architecture/blob/1.26.0/Sources/ComposableArchitecture/Effect.swift
+- TCA 1.25 Migration GuideのTrait deprecations: https://github.com/pointfreeco/swift-composable-architecture/blob/1.26.0/Sources/ComposableArchitecture/Documentation.docc/Articles/MigrationGuides/MigratingTo1.25.md#Trait-deprecations
+- Parent FeatureからChild FeatureへActionを送る方法と性能上の注意: https://github.com/pointfreeco/swift-composable-architecture/blob/1.26.0/Sources/ComposableArchitecture/Documentation.docc/Articles/Performance.md#Sharing-logic-in-child-features
+- Presentation内のChild FeatureのEffectとParent FeatureのEffectの分離: https://github.com/pointfreeco/swift-composable-architecture/blob/1.26.0/Sources/ComposableArchitecture/Reducer/Reducers/PresentationReducer.swift
+- Cancellation IDと`navigationIDPath`: https://github.com/pointfreeco/swift-composable-architecture/blob/1.26.0/Sources/ComposableArchitecture/Effects/Cancellation.swift
+- Featureの`reduce`直接呼び出しの非推奨: https://github.com/pointfreeco/swift-composable-architecture/blob/1.26.0/Sources/ComposableArchitecture/Reducer.swift
+- TCA 2開発版のTrigger: https://github.com/pointfreeco/TCA26/blob/main/Sources/ComposableArchitecture2/Documentation.docc/Articles/FeatureCommunication/FeatureCommunication-Triggers.md
+- TCA 2開発版のParent FeatureとChild FeatureのTrigger実装例: https://github.com/pointfreeco/TCA26/blob/main/Examples/SwiftUICaseStudies/FeatureCommunication/Triggers.swift
+- TCA 2開発版のStoreTaskID: https://github.com/pointfreeco/TCA26/blob/main/Sources/ComposableArchitecture2/StoreTaskID.swift
+- TCA 2開発版のTask置換実装: https://github.com/pointfreeco/TCA26/blob/main/Sources/ComposableArchitecture2/FeatureDynamicProperties/FeatureStore.swift
 - Discussion #1952を解説する日本語記事: https://zenn.dev/kalupas226/articles/87b1f7b245915c

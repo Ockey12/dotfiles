@@ -24,7 +24,7 @@ Action Boundariesは、Actionを発生元と通知先で分ける設計規約で
 Action境界の分類とコード上の並びには、次の固定順序を使う。
 
 1. ViewがBinding以外のユーザーの操作またはライフサイクルを伝える場合、`view`にする。詳細は[View Action](#view-action)で判断する。
-2. 別Featureが、このFeatureの所有する処理を起動する場合、`trigger`の候補にする。採用可否は[Trigger Action](#trigger-action)で判断する。
+2. 別Featureが、このFeatureの所有する処理を起動する場合、`trigger`の候補にする。採用可否は[Child FeatureへActionを送りたい場合の選択肢と判断基準](parent-child-communication.md)で判断する。
 3. Effect、Dependency、タイマー、通知から戻る場合、`internal`にする。詳細は[Internal Action](#internal-action)で判断する。
 4. Child FeatureがParent FeatureへActionを通知する場合、`delegate`にする。詳細は[Delegate Action](#delegate-action)で判断する。
 5. `BindingAction<State>`の場合、`binding`にする。
@@ -166,61 +166,13 @@ Viewから発生させるActionは`view`と`binding`に限定し、`trigger`、`
 
 ## Trigger Action
 
-`trigger`は、別Featureが、このFeatureの所有するEffectを外部から起動する必要がある場合だけ使う。Parent Featureは原則として、Child Featureへ処理を命令するためのAction Caseを構築しないため、定義する前に次の順序で責務を見直す。
+`trigger`は、別Featureが、このFeatureの所有するEffectを外部から起動する入力境界である。TCA 1専用のローカル規約であり、Parent FeatureからChild Featureへの一般的な命令APIではない。
 
-1. Parent FeatureだけがChild FeatureのStateを同期更新するなら、Parent Featureで直接更新する。この更新だけを隠すParent Feature専用メソッドをChild FeatureのStateへ追加しない。
-2. Parent Featureだけが所有する処理なら、Parent FeatureのState、Action、Dependencyへ置く。
-3. Child Featureだけが所有し、外部からの起動が不要なら、Child Feature内から開始する。
-4. Parent FeatureとChild Featureが同じ同期更新を行うなら、Child FeatureのStateの`mutating`メソッドを共有する。このメソッドはEffectを返さず、Parent Featureで`Effect.map`しない。
-5. 複数Featureが別々にEffectを所有するなら、Dependencyの非同期APIを共有し、各FeatureでEffectを構築する。
-6. Child Feature所有のEffectをParent Featureから起動する必要が残る場合だけ、TCA 1の`trigger`を候補にする。
+Parent FeatureからChild FeatureへActionを送りたい場合は、先に[Child FeatureへActionを送りたい場合の選択肢と判断基準](parent-child-communication.md)を読む。Stateの同期更新、EffectとDependencyの所有者、起動元、頻度、Child FeatureのIdentityと寿命を比較し、Action送信が不要な構成を含む選択肢から選ぶ。`trigger`の採用条件、TCA 1での実装、Cancellation IDの置き場所、TCA 2への移行も同資料で扱う。
 
-この見直しを行っても、処理、応答後のState更新、Cancellation IDをChild Featureが所有し、Child Feature自身とParent Featureの両方に低頻度で意味のある開始理由が残る場合に`trigger`を採用する。Optional、Presentation、Collection、Stack上のChild Featureでは、送信時に対象が存在することも必要になる。詳細な選択基準、実装、キャンセル条件は[Parent FeatureからChild FeatureへActionを送らない](parent-child-communication.md)を読む。
+`trigger`を採用した場合は、Actionのトップレベルに専用の`Trigger`名前空間を置き、`view`や`internal`と混ぜない。Parent Featureが具体的なChild FeatureのActionとして送るのは`trigger`だけにする。`case child(ChildFeature.Action)`自体はFeature合成に必要だが、Child Featureの`view`、`internal`、`delegate`、`binding`をParent Featureから送らない。
 
-`case child(ChildFeature.Action)`はFeature合成に必要である。禁止するのはcase自体ではなく、Parent FeatureがChild Featureの`view`、`internal`、`delegate`、`binding`を`.send`することである。
-
-`trigger`を採用した場合、Actionのトップレベルに専用名前空間`Trigger`を置く。
-
-```swift
-enum Action: ViewAction {
-  case view(View)
-  case trigger(Trigger)
-  case `internal`(Internal)
-
-  @CasePathable
-  enum View {
-    case onAppear
-  }
-
-  @CasePathable
-  enum Trigger {
-    case refresh
-  }
-
-  @CasePathable
-  enum Internal {
-    case refreshFinished
-  }
-}
-```
-
-`trigger`を`view`や`internal`と混ぜない。Child Featureの`view`と`trigger`で共通の処理があれば、両方から同じFeatureローカルヘルパー関数を直接呼ぶ。
-
-```swift
-case let .view(viewAction):
-  switch viewAction {
-  case .onAppear:
-    return refresh(state: &state)
-  }
-
-case let .trigger(triggerAction):
-  switch triggerAction {
-  case .refresh:
-    return refresh(state: &state)
-  }
-```
-
-一方からもう一方を`.send`すると、共有ロジックのためだけに余分なActionを処理し、テストにも中継Actionが現れるため避ける。また、`.send`は関数呼び出しよりも実行コストが高いため、ローカルヘルパー関数で実現できるなら`.send`は避ける。
+Child Featureの`view`と`trigger`が同じ処理を開始する場合は、両方から同じFeatureローカルヘルパーを直接呼ぶ。Actionを相互に`.send`して中継しない。
 
 ## Internal Action
 
@@ -265,17 +217,11 @@ Parent Featureは、Child FeatureのDelegate Actionのうち、自身が処理�
 - View Actionが期待するStateだけを変更する。
 - Effectの応答が`internal`として戻る。
 - Child Featureの結果を理由にParent FeatureのStateを更新するのは、`delegate`受信時に限定する。
-- Parent FeatureだけによるChild FeatureのState同期更新は直接行う。
-- Parent FeatureとChild Featureが同じ同期更新を行う場合、Effectを返さない共有メソッドを使う。
 - Parent Featureから送る具体的なChild FeatureのActionは`trigger`だけにする。
 - Action Case、ネストした境界Action型、`Reduce`の外側の`switch`を`view`、`trigger`、`internal`、`delegate`、`binding`の順に並べる。
 - `view`、`trigger`、`internal`のAssociated Valueを取り出してから、内側の`switch`で具体Caseを処理する。
-- Parent Featureの`trigger`とChild Featureの`view`が同じ処理を行うなら、Featureローカルヘルパーとして切り出す。
 - Child Featureが、自身の`delegate`に対する処理を行わない。
-- Child Featureの実処理に付けたCancellation IDが、どちらの開始元にも作用する。
-- 一時的なChild Featureを破棄した後にResponse Actionが届かない。
 - `binding`は`BindingReducer`で処理し、同じ変更をView Actionで重複実装しない。
-- キャンセル時に完了ActionやDelegateを誤送信しない。
 
 ## レビュー時の問題例
 
@@ -284,12 +230,6 @@ Parent Featureは、Child FeatureのDelegate Actionのうち、自身が処理�
 - Action Case、ネストした境界Action型、`Reduce`の外側の`switch`が`view`、`trigger`、`internal`、`delegate`、`binding`の順になっていない。
 - `case .trigger(.refresh)`のように、トップレベルActionと具体Caseを同じパターンで処理している。
 - Parent FeatureがChild Featureの`view`、通信応答、Bindingを送信したり対応する処理を実装したりしている。
-- 高頻度の状態同期にParent FeatureからChild Featureへの`trigger`送信を使っている。
-- Parent Featureだけの同期更新を、Parent Feature専用のChild FeatureのStateメソッドへ抽出している。
-- Child FeatureのStateのメソッドがEffectを返し、Parent Featureで`Effect.map`している。
-- Child Featureの`trigger`からParent Feature所有の処理を開始している。
-- Parent Featureの`.send(.child(.trigger(...)))`へ`.cancellable`を付け、Child Featureの実処理には付けていない。
-- Parent FeatureがChild Featureの`reduce(into:action:)`を直接呼んでいる。
 - すべてのActionを`view`に入れ、Feature合成のActionまで隠している。
 - `@ViewAction`を型レベルの完全なアクセス制御として説明している。
 
