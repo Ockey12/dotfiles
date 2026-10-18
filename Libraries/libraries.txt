@@ -1,5 +1,6 @@
 https://github.com/swiftlang/swift.git
 https://github.com/swiftlang/swift-evolution.git
+https://github.com/swiftlang/swift-package-manager.git
 https://github.com/apple/swift-algorithms
 https://github.com/pointfreeco/combine-schedulers.git
 https://github.com/groue/GRDB.swift.git
