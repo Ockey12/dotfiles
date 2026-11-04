@@ -1,0 +1,148 @@
+<header class="page-header">
+  <div class="page-icon">🔍</div>
+  <h1 class="page-title">ObservableObjectから@Observableへの移行調査</h1>
+  <dl class="props">
+    <dt>作成日</dt><dd>2026-11-05</dd>
+    <dt>種類</dt><dd><span class="tag blue">調査</span></dd>
+    <dt>対象</dt><dd>SwiftUIアプリの状態管理(Appleのサンプル「BookReader」相当の構成)</dd>
+    <dt>ステータス</dt><dd><span class="tag green">完了</span></dd>
+  </dl>
+</header>
+
+<div class="callout">
+  <p>結論: 最小対応OSがiOS 17以降なら、モデル型を1つずつ<code>@Observable</code>へ移行できる。<code>ObservableObject</code>と混在させたまま進められるため、一括で置き換える必要はない。</p>
+  <ul>
+    <li>移行後のViewは、<code>body</code>で読んだプロパティが変わったときだけ更新される</li>
+    <li>主な作業は、<code>@Published</code>の削除と、<code>@StateObject</code>などのプロパティラッパーの置き換えである</li>
+    <li>iOS 16以前もサポートする場合は、Perceptionライブラリで同じ書き方を先に導入できる</li>
+  </ul>
+</div>
+
+<h2>背景と目的</h2>
+<p>このアプリは、Combineの<code>ObservableObject</code>と<code>@Published</code>でモデルの状態を管理している。iOS 17以降のSwiftUIは、Swiftの言語機能として実装されたObservationフレームワークに対応している<a class="cite" href="#src-1">[1]</a>。</p>
+<p>本レポートでは、Observationへ移行する価値、移行の手順、移行中の注意点を整理する。</p>
+
+<h2>調査結果</h2>
+<h3>更新の仕組みの違い</h3>
+<p>最も大きな違いは、Viewが更新される条件である。<code>ObservableObject</code>では、Viewが読んでいないプロパティでも、いずれかの<code>@Published</code>プロパティが変わるとViewが更新される。<code>@Observable</code>では、Viewの<code>body</code>が直接読んだプロパティが変わったときだけ更新される<a class="cite" href="#src-1">[1]</a>。</p>
+<table>
+  <thead>
+    <tr><th>観点</th><th>ObservableObject</th><th>@Observable</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>提供元</td><td>Combine</td><td>Observation(Swift 5.9)</td></tr>
+    <tr><td>変更を通知するプロパティ</td><td><code>@Published</code>を付けたもの</td><td>すべて(除外するものに<code>@ObservationIgnored</code>を付ける)</td></tr>
+    <tr><td>Viewが更新される条件</td><td>いずれかの<code>@Published</code>が変わったとき</td><td><code>body</code>で読んだプロパティが変わったとき</td></tr>
+    <tr><td>オプショナルやコレクション内のオブジェクト</td><td><span class="tag red">追跡できない</span></td><td><span class="tag green">追跡できる</span></td></tr>
+    <tr><td>対応OS</td><td>iOS 13以降</td><td>iOS 17以降</td></tr>
+  </tbody>
+</table>
+
+<h3>プロパティラッパーの対応</h3>
+<p>データフローのプロパティラッパーは、次のように置き換える<a class="cite" href="#src-1">[1]</a>。</p>
+<table>
+  <thead>
+    <tr><th>用途</th><th>移行前</th><th>移行後</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Viewがモデルを所有する</td><td><code>@StateObject</code></td><td><code>@State</code></td></tr>
+    <tr><td>環境へモデルを渡す</td><td><code>.environmentObject(_:)</code></td><td><code>.environment(_:)</code></td></tr>
+    <tr><td>環境からモデルを取り出す</td><td><code>@EnvironmentObject</code></td><td><code>@Environment(Library.self)</code></td></tr>
+    <tr><td>モデルを受け取って表示する</td><td><code>@ObservedObject</code></td><td>通常のプロパティ</td></tr>
+    <tr><td>モデルのプロパティへのバインディングが必要</td><td><code>@ObservedObject</code></td><td><code>@Bindable</code></td></tr>
+  </tbody>
+</table>
+
+<div class="columns">
+  <div>
+    <h3>移行する利点</h3>
+    <ul>
+      <li>Viewが読んでいないプロパティの変更で再描画されなくなる</li>
+      <li><code>@Published</code>を付け忘れる誤りがなくなる</li>
+      <li><code>@State</code>や<code>@Environment</code>など、値型と同じ仕組みでモデルを扱える</li>
+    </ul>
+  </div>
+  <div>
+    <h3>移行で気をつけること</h3>
+    <ul>
+      <li>最小対応OSがiOS 17以降になる</li>
+      <li>Combineの<code>$</code>付きのPublisherで購読している箇所は書き換えが必要になる</li>
+      <li>移行中は、型ごとにViewの更新条件が異なる</li>
+    </ul>
+  </div>
+</div>
+
+<h2>移行手順</h2>
+<p>Appleの移行ガイドは、次の順に進める方法を示している<a class="cite" href="#src-1">[1]</a>。</p>
+<ol>
+  <li>モデル型の<code>ObservableObject</code>への準拠を外し、<code>@Observable</code>マクロを付ける</li>
+  <li><code>@Published</code>を外す。Viewから読めるが追跡したくないプロパティには<code>@ObservationIgnored</code>を付ける</li>
+  <li><code>@StateObject</code>を<code>@State</code>に、<code>.environmentObject(_:)</code>を<code>.environment(_:)</code>に置き換える</li>
+  <li><code>@EnvironmentObject</code>を<code>@Environment(Library.self)</code>に置き換える</li>
+  <li><code>@ObservedObject</code>を外す。バインディングが必要なViewでは<code>@Bindable</code>に置き換える</li>
+</ol>
+<pre data-lang="swift"><code>// 移行前
+class Book: ObservableObject, Identifiable {
+    @Published var title = "Sample Book Title"
+    let id = UUID()
+}
+
+// 移行後
+@Observable class Book: Identifiable {
+    var title = "Sample Book Title"
+    let id = UUID()
+}</code></pre>
+<p>手順1と2を終えた時点でも、アプリは従来どおりに動く。<code>@StateObject</code>や<code>@EnvironmentObject</code>は、<code>@Observable</code>を付けた型にも対応しているためである。移行ガイドも、一括ではなく型ごとに進める方法を勧めている。</p>
+<blockquote>
+  <p>Your app can mix data model types that use different observation systems.</p>
+</blockquote>
+<p class="muted">出典: Migrating from the Observable Object protocol to the Observable macro<a class="cite" href="#src-1">[1]</a></p>
+<p>バインディングが必要なViewでは、<code>@Bindable</code>を付けたプロパティから<code>$</code>でバインディングを取り出す。</p>
+<pre data-lang="swift"><code>struct BookEditView: View {
+    @Bindable var book: Book
+
+    var body: some View {
+        TextField("Title", text: $book.title)
+    }
+}</code></pre>
+
+<h2>注意点</h2>
+<div class="callout warning">
+  <p>移行中は、Viewが読むモデルの型によって更新条件が異なる。<code>ObservableObject</code>のままの型を読むViewは、従来どおり読んでいないプロパティの変更でも更新される<a class="cite" href="#src-1">[1]</a>。</p>
+</div>
+<p><code>@Published</code>を外すと、<code>$title</code>のようなPublisherは使えなくなる。Combineのパイプラインで値を購読している箇所は、Observationの仕組みへ書き換える。Swift 6.2以降では、<code>Observations</code>で値の変化を非同期シーケンスとして受け取れる<a class="cite" href="#src-2">[2]</a>。</p>
+<details>
+  <summary>iOS 16以前もサポートする場合</summary>
+  <p>Perceptionライブラリは、<code>@Observable</code>、<code>withObservationTracking</code>、<code>Observations</code>を、iOS 13、macOS 10.15、tvOS 13、watchOS 6まで使えるようにする<a class="cite" href="#src-3">[3]</a>。</p>
+  <p><code>@Observable</code>の代わりに<code>@Perceptible</code>を付け、Viewの<code>body</code>の中身を<code>WithPerceptionTracking</code>で囲む。この1点を除けば、使い方は公式のツールとほぼ同じである<a class="cite" href="#src-3">[3]</a>。</p>
+</details>
+
+<h2>関連するSwift Evolution提案</h2>
+<p>Observationは、次の提案で段階的に拡張されている。</p>
+<table>
+  <thead>
+    <tr><th>提案</th><th>内容</th><th>実装</th><th>このアプリでの必要性</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>SE-0395 Observation<a class="cite" href="#src-4">[4]</a></td><td><code>@Observable</code>マクロと<code>withObservationTracking</code></td><td>Swift 5.9</td><td><span class="tag blue">必須</span></td></tr>
+    <tr><td>SE-0475 Transactional Observation of Values<a class="cite" href="#src-2">[2]</a></td><td><code>Observations</code>による非同期シーケンスでの値の監視</td><td>Swift 6.2</td><td><span class="tag yellow">Combineを置き換える箇所だけ</span></td></tr>
+    <tr><td>SE-0506 Advanced Observation Tracking<a class="cite" href="#src-5">[5]</a></td><td>ミドルウェアなどの高度な用途向けの追跡API</td><td>Swift 6.4</td><td><span class="tag gray">対象外</span></td></tr>
+  </tbody>
+</table>
+
+<h2>次のアクション</h2>
+<ul class="todo">
+  <li class="done">Appleの移行ガイドと関連するSwift Evolution提案を確認する</li>
+  <li>最小対応OSをiOS 17以降にできるかを確認する</li>
+  <li>Combineの<code>$</code>付きのPublisherを使っている箇所を洗い出す</li>
+  <li>依存の少ないモデル型から1つずつ移行する</li>
+</ul>
+
+<h2>参考資料</h2>
+<ol class="sources">
+  <li id="src-1"><a href="https://developer.apple.com/documentation/swiftui/migrating-from-the-observable-object-protocol-to-the-observable-macro">Migrating from the Observable Object protocol to the Observable macro</a> <span class="muted">developer.apple.com</span></li>
+  <li id="src-2"><a href="https://github.com/swiftlang/swift-evolution/blob/main/proposals/0475-observed.md">SE-0475 Transactional Observation of Values</a> <span class="muted">github.com/swiftlang/swift-evolution</span></li>
+  <li id="src-3"><a href="https://github.com/pointfreeco/swift-perception">pointfreeco/swift-perception</a> <span class="muted">github.com</span></li>
+  <li id="src-4"><a href="https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md">SE-0395 Observation</a> <span class="muted">github.com/swiftlang/swift-evolution</span></li>
+  <li id="src-5"><a href="https://github.com/swiftlang/swift-evolution/blob/main/proposals/0506-advanced-observation-tracking.md">SE-0506 Advanced Observation Tracking</a> <span class="muted">github.com/swiftlang/swift-evolution</span></li>
+</ol>
