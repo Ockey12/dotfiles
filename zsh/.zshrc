@@ -6,5 +6,6 @@ fi
 # ここでzsh設定ファイルを読み込む
 source "${${(%):-%N}:A:h}/ghq.zsh"
 source "${${(%):-%N}:A:h}/gwq.zsh"
+source "${${(%):-%N}:A:h}/claude.zsh"
 
 eval "$(starship init zsh)"
